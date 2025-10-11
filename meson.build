@@ -8,10 +8,11 @@ sources = [
   'src/main.c',
 ]
 
-dependencies = dependency('raylib')
+dependencies = [dependency('raylib'), dependency('blas'), dependency('lapacke')]
 
 client = executable(
   'main', 
   sources,
-  dependencies : dependencies
+  dependencies : dependencies,
+  link_args: ['-lm']
 )

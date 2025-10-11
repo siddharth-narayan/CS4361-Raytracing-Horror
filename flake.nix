@@ -1,16 +1,23 @@
 {
-  inputs.openssl-quantum.url = "github:siddharth-narayan/openssl-with-providers";
   outputs =
-    { nixpkgs, openssl-quantum, ... }:
+    { nixpkgs, ... }:
     let
       pkgs = import nixpkgs { system = "x86_64-linux"; };
     in
     {
       devShells.x86_64-linux.default = pkgs.mkShell {
         buildInputs = with pkgs; [
+          # Build System
           meson
           ninja
+          cmake
+          pkg-config
+          
+          # Libraries
           raylib
+
+          openblas
+          lapack
         ];
       };
     };
