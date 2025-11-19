@@ -30,12 +30,12 @@ typedef struct {
 // Function declarations
 Maze* Maze_Create(int width, int height, float cellSize);
 void Maze_Destroy(Maze* maze);
-void Maze_Generate(Maze* maze); // DFS backtracking algorithm
+void Maze_Generate(Maze* maze);
 bool Maze_HasWall(const Maze* maze, int x, int y, int direction);
 int Maze_GetWallRects(const Maze* maze, WallRect* outRects, int maxRects);
 Vector2 Maze_CellToWorld(const Maze* maze, int cellX, int cellY);
 void Maze_WorldToCell(const Maze* maze, float worldX, float worldZ, int* outCellX, int* outCellY);
 bool Maze_IsExit(const Maze* maze, int cellX, int cellY);
 
-#endif // MAZE_H
+#endif
 

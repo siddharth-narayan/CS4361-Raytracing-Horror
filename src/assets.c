@@ -4,18 +4,15 @@
 #include <math.h>
 #include <string.h>
 
-// Generate procedural stone wall texture
 Texture2D GenerateStoneWallTexture(int width, int height) {
-    // Create image using raylib (it manages the memory)
     Image img = GenImageColor(width, height, (Color){80, 80, 85, 255});
     
-    // Access pixel data directly
+    // access the pixel data directly
     Color* pixels = (Color*)img.data;
     
-    // Add stone-like noise and variation
+    // add the stone-like noise and variation
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
-            // Create mortar lines (grid pattern)
             int gridX = x % 32;
             int gridY = y % 32;
             bool isMortar = (gridX < 2 || gridY < 2 || gridX > 30 || gridY > 30);
@@ -101,7 +98,6 @@ Texture2D GenerateCeilingTexture(int width, int height) {
     return texture;
 }
 
-// Load all game assets
 GameAssets* Assets_Load(void) {
     GameAssets* assets = (GameAssets*)malloc(sizeof(GameAssets));
     if (!assets) return NULL;
@@ -114,7 +110,6 @@ GameAssets* Assets_Load(void) {
     return assets;
 }
 
-// Unload all game assets
 void Assets_Unload(GameAssets* assets) {
     if (!assets || !assets->loaded) return;
     
@@ -125,7 +120,6 @@ void Assets_Unload(GameAssets* assets) {
     free(assets);
 }
 
-// Generate torches on walls randomly (sparse placement for scary atmosphere)
 int Torches_Generate(const Maze* maze, Torch** outTorches, int maxTorches) {
     if (!maze || !outTorches || maxTorches <= 0) return 0;
     
@@ -133,11 +127,11 @@ int Torches_Generate(const Maze* maze, Torch** outTorches, int maxTorches) {
     if (!*outTorches) return 0;
     
     int count = 0;
-    const float torchHeight = 2.0f;  // Height on wall
-    const float wallOffset = 0.11f;  // Slight offset from wall surface
-    const float torchPlacementChance = 0.08f; // Only 8% of walls get torches (sparse and scary)
+    const float torchHeight = 2.0f;
+    const float wallOffset = 0.11f;
+    const float torchPlacementChance = 0.08f;
     
-    // Collect all wall positions first
+    // collect all wall positions first
     typedef struct {
         int x, y;
         int direction; // 0=N, 1=S, 2=W, 3=E
@@ -214,9 +208,8 @@ int Torches_Generate(const Maze* maze, Torch** outTorches, int maxTorches) {
                     break;
             }
             
-            // Random flicker phase and intensity variation
             (*outTorches)[count].flickerTime = (float)(rand() % 1000) / 1000.0f * 6.28f;
-            (*outTorches)[count].baseIntensity = 0.6f + ((float)(rand() % 30) / 100.0f); // More variation, slightly dimmer
+            (*outTorches)[count].baseIntensity = 0.6f + ((float)(rand() % 30) / 100.0f);
             
             count++;
         }
@@ -226,7 +219,7 @@ int Torches_Generate(const Maze* maze, Torch** outTorches, int maxTorches) {
     return count;
 }
 
-// Update torch flickering (more erratic for scary atmosphere)
+// update the torch flickering (more erratic for scary atmosphere)
 void Torches_Update(Torch* torches, int count, float dt) {
     for (int i = 0; i < count; i++) {
         // Variable flicker speed for more erratic behavior
@@ -238,13 +231,12 @@ void Torches_Update(Torch* torches, int count, float dt) {
     }
 }
 
-// Render torches (simple cube representation)
+// render the torches (simple cube representation)
 void Torches_Render(const Torch* torches, int count) {
     // Draw simple cubes for torches
     for (int i = 0; i < count; i++) {
-        // Draw torch base (small cube)
         DrawCube(torches[i].position, 0.1f, 0.3f, 0.1f, (Color){60, 40, 20, 255});
-        // Draw torch bracket
+        // draw the torch bracket
         Vector3 bracketPos = torches[i].position;
         bracketPos.y += 0.15f;
         DrawCube(bracketPos, 0.15f, 0.05f, 0.05f, (Color){80, 80, 80, 255});
@@ -264,7 +256,7 @@ ParticleSystem* ParticleSystem_Create(int maxParticles) {
     
     ps->maxParticles = maxParticles;
     ps->activeParticles = 0;
-    ps->emitRate = 15.0f; // Reduced emit rate for performance (particles per second)
+    ps->emitRate = 15.0f;
     ps->emitAccumulator = 0.0f;
     ps->emitterPos = (Vector3){0, 0, 0};
     
@@ -351,11 +343,7 @@ void ParticleSystem_Render(const ParticleSystem* ps) {
     }
 }
 
-// Update lighting for torches (flickering point lights)
-// Note: This stores light data for rendering - actual lighting is handled via shaders or visual representation
 void Lighting_UpdateTorchLights(const Torch* torches, int count, float time) {
-    // This function is called to update torch flicker states
-    // Actual lighting rendering happens in the main render loop
     (void)torches;
     (void)count;
     (void)time;
