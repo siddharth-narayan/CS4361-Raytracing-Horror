@@ -21,11 +21,25 @@
 #define RUN_MULTIPLIER       1.8f
 #define MOUSE_SENS           0.0020f // Radians per pixel
 
+#define SCARY_CHAR_COUNT     3       // Number of scary characters
+#define SCARY_CHAR_SPEED     3.5f    // Scary character movement speed (slightly slower than player)
+#define SCARY_CHAR_RADIUS    0.35f   // Collision radius
+#define SCARY_CHAR_HEIGHT    2.2f    // Height of scary character
+
 // Game state
 typedef enum {
     GAME_STATE_PLAYING,
-    GAME_STATE_WON
+    GAME_STATE_WON,
+    GAME_STATE_GAMEOVER
 } GameState;
+
+// Scary character structure
+typedef struct {
+    Vector3 position;      // XZ position (Y will be 0 for ground level)
+    float speed;          // Movement speed
+    float radius;         // Collision radius
+    float height;         // Height of the character
+} ScaryCharacter;
 
 // Helper function: Clamp float value
 static inline float clampf(float v, float lo, float hi) {
@@ -41,6 +55,15 @@ static bool CircleRectIntersect(Vector2 c, float r, Rectangle rect) {
     return (dx*dx + dz*dz) <= r*r;
 }
 
+// Circle vs circle collision in XZ plane
+static bool CircleCircleIntersect(Vector2 c1, float r1, Vector2 c2, float r2) {
+    float dx = c1.x - c2.x;
+    float dz = c1.y - c2.y;
+    float distSq = dx*dx + dz*dz;
+    float radiusSum = r1 + r2;
+    return distSq <= radiusSum * radiusSum;
+}
+
 // Check collision with any wall rectangle
 static bool CollidesAny(Vector2 c, float r, const WallRect* walls, int count) {
     for (int i = 0; i < count; ++i) {
@@ -52,7 +75,8 @@ static bool CollidesAny(Vector2 c, float r, const WallRect* walls, int count) {
 // Initialize game (generate maze, reset player)
 static void InitGame(Maze** maze, WallRect** walls, int* wallCount, Vector3* playerPos, 
                      float* yaw, float* pitch, GameState* gameState,
-                     Torch** torches, int* torchCount, ParticleSystem*** particleSystems) {
+                     Torch** torches, int* torchCount, ParticleSystem*** particleSystems,
+                     ScaryCharacter* scaryChars, int scaryCharCount) {
     // Free old maze if exists
     if (*maze) {
         Maze_Destroy(*maze);
@@ -114,6 +138,38 @@ static void InitGame(Maze** maze, WallRect** walls, int* wallCount, Vector3* pla
     playerPos->x = startWorld.x;
     playerPos->y = 0.0f;
     playerPos->z = startWorld.y;
+    
+    // Initialize scary characters at different positions (spread out from exit and corners)
+    if (scaryChars && scaryCharCount > 0) {
+        // First character at exit
+        Vector2 exitWorld = Maze_CellToWorld(*maze, (int)(*maze)->exitPos.x, (int)(*maze)->exitPos.y);
+        scaryChars[0].position = (Vector3){exitWorld.x, 0.0f, exitWorld.y};
+        scaryChars[0].speed = SCARY_CHAR_SPEED;
+        scaryChars[0].radius = SCARY_CHAR_RADIUS;
+        scaryChars[0].height = SCARY_CHAR_HEIGHT;
+        
+        // Second character at top-right corner (if exists)
+        if (scaryCharCount > 1) {
+            int cornerX = (*maze)->width - 1;
+            int cornerY = 0;
+            Vector2 cornerWorld = Maze_CellToWorld(*maze, cornerX, cornerY);
+            scaryChars[1].position = (Vector3){cornerWorld.x, 0.0f, cornerWorld.y};
+            scaryChars[1].speed = SCARY_CHAR_SPEED;
+            scaryChars[1].radius = SCARY_CHAR_RADIUS;
+            scaryChars[1].height = SCARY_CHAR_HEIGHT;
+        }
+        
+        // Third character at bottom-left corner (if exists)
+        if (scaryCharCount > 2) {
+            int cornerX = 0;
+            int cornerY = (*maze)->height - 1;
+            Vector2 cornerWorld = Maze_CellToWorld(*maze, cornerX, cornerY);
+            scaryChars[2].position = (Vector3){cornerWorld.x, 0.0f, cornerWorld.y};
+            scaryChars[2].speed = SCARY_CHAR_SPEED;
+            scaryChars[2].radius = SCARY_CHAR_RADIUS;
+            scaryChars[2].height = SCARY_CHAR_HEIGHT;
+        }
+    }
     
     *yaw = 0.0f;
     *pitch = 0.0f;
@@ -314,9 +370,12 @@ int main(void) {
     int torchCount = 0;
     ParticleSystem** particleSystems = NULL;
     
+    // Scary characters
+    ScaryCharacter scaryChars[SCARY_CHAR_COUNT] = {0};
+    
     // Initialize game
     InitGame(&maze, &walls, &wallCount, &playerPos, &yaw, &pitch, &gameState,
-             &torches, &torchCount, &particleSystems);
+             &torches, &torchCount, &particleSystems, scaryChars, SCARY_CHAR_COUNT);
     
     // Main game loop
     while (!WindowShouldClose()) {
@@ -332,7 +391,7 @@ int main(void) {
         // Restart game
         if (IsKeyPressed(KEY_R)) {
             InitGame(&maze, &walls, &wallCount, &playerPos, &yaw, &pitch, &gameState,
-                     &torches, &torchCount, &particleSystems);
+                     &torches, &torchCount, &particleSystems, scaryChars, SCARY_CHAR_COUNT);
         }
         
         // Update torches
@@ -438,6 +497,56 @@ int main(void) {
                 if (playerVelY > 0) playerVelY = 0;
             }
             
+            // Update scary characters to follow player
+            if (gameState == GAME_STATE_PLAYING) {
+                Vector2 playerPos2D = (Vector2){playerPos.x, playerPos.z};
+                
+                // Update each scary character
+                for (int i = 0; i < SCARY_CHAR_COUNT; i++) {
+                    Vector2 charPos = (Vector2){scaryChars[i].position.x, scaryChars[i].position.z};
+                    
+                    // Calculate direction to player
+                    Vector2 dir = (Vector2){
+                        playerPos2D.x - charPos.x,
+                        playerPos2D.y - charPos.y
+                    };
+                    
+                    // Normalize direction
+                    float dist = sqrtf(dir.x * dir.x + dir.y * dir.y);
+                    if (dist > 0.001f) {
+                        dir.x /= dist;
+                        dir.y /= dist;
+                        
+                        // Move towards player with collision detection
+                        Vector2 moveStep = (Vector2){
+                            dir.x * scaryChars[i].speed * dt,
+                            dir.y * scaryChars[i].speed * dt
+                        };
+                        
+                        // Try X movement
+                        Vector2 testX = (Vector2){charPos.x + moveStep.x, charPos.y};
+                        if (!CollidesAny(testX, scaryChars[i].radius, walls, wallCount)) {
+                            charPos.x = testX.x;
+                        }
+                        
+                        // Try Z movement
+                        Vector2 testZ = (Vector2){charPos.x, charPos.y + moveStep.y};
+                        if (!CollidesAny(testZ, scaryChars[i].radius, walls, wallCount)) {
+                            charPos.y = testZ.y;
+                        }
+                        
+                        scaryChars[i].position.x = charPos.x;
+                        scaryChars[i].position.z = charPos.y;
+                    }
+                    
+                    // Check collision with player
+                    if (CircleCircleIntersect(playerPos2D, PLAYER_RADIUS, charPos, scaryChars[i].radius)) {
+                        gameState = GAME_STATE_GAMEOVER;
+                        break; // Exit loop once collision detected
+                    }
+                }
+            }
+            
             // Check if player reached exit
             int cellX, cellY;
             Maze_WorldToCell(maze, playerPos.x, playerPos.z, &cellX, &cellY);
@@ -505,6 +614,27 @@ int main(void) {
             }
         }
         
+        // Render scary characters (dark, menacing figures)
+        if (gameState == GAME_STATE_PLAYING || gameState == GAME_STATE_GAMEOVER) {
+            for (int i = 0; i < SCARY_CHAR_COUNT; i++) {
+                Vector3 charRenderPos = scaryChars[i].position;
+                charRenderPos.y = scaryChars[i].height * 0.5f; // Center the character vertically
+                
+                // Draw a dark, scary character (dark red/black cube with slight glow)
+                // Slightly vary the color for each character
+                Color scaryColor = (Color){
+                    (unsigned char)(40 + i * 5), 
+                    0, 
+                    (unsigned char)(i * 3), 
+                    255
+                }; // Very dark red with slight variation
+                DrawCube(charRenderPos, scaryChars[i].radius * 2.0f, scaryChars[i].height, scaryChars[i].radius * 2.0f, scaryColor);
+                
+                // Add a subtle dark glow around it
+                DrawCubeWires(charRenderPos, scaryChars[i].radius * 2.2f, scaryChars[i].height * 1.1f, scaryChars[i].radius * 2.2f, (Color){80, 0, 0, 100});
+            }
+        }
+        
         EndMode3D();
         
         // Crosshair
@@ -537,6 +667,31 @@ int main(void) {
             fontSize = 24;
             textWidth = MeasureText(restartText, fontSize);
             DrawText(restartText, (screenWidth - textWidth) / 2, screenHeight / 2 + 20, fontSize, RAYWHITE);
+        } else if (gameState == GAME_STATE_GAMEOVER) {
+            // Game over screen
+            int screenWidth = GetScreenWidth();
+            int screenHeight = GetScreenHeight();
+            
+            // Dark red overlay for scary effect
+            DrawRectangle(0, 0, screenWidth, screenHeight, (Color){40, 0, 0, 220});
+            
+            // Game over message
+            const char* gameOverText = "GAME OVER";
+            int fontSize = 60;
+            int textWidth = MeasureText(gameOverText, fontSize);
+            DrawText(gameOverText, (screenWidth - textWidth) / 2, screenHeight / 2 - 60, fontSize, RED);
+            
+            // Scary message
+            const char* scaryText = "You were caught...";
+            fontSize = 28;
+            textWidth = MeasureText(scaryText, fontSize);
+            DrawText(scaryText, (screenWidth - textWidth) / 2, screenHeight / 2, fontSize, (Color){200, 0, 0, 255});
+            
+            // Restart instruction
+            const char* restartText = "Press R to restart or Esc to quit";
+            fontSize = 24;
+            textWidth = MeasureText(restartText, fontSize);
+            DrawText(restartText, (screenWidth - textWidth) / 2, screenHeight / 2 + 40, fontSize, RAYWHITE);
         }
         
         EndDrawing();
