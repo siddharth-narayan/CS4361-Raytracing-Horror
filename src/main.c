@@ -95,8 +95,8 @@ static void InitGame(Maze** maze, WallRect** walls, int* wallCount, Vector3* pla
     
     *wallCount = Maze_GetWallRects(*maze, *walls, maxWalls);
     
-    // Generate torches (reduced limit for better performance)
-    int maxTorches = 100; // Reduced from 200 for better performance
+    // Generate torches (sparse random placement for scary atmosphere)
+    int maxTorches = 25; // Very few torches for dark, scary atmosphere
     *torchCount = Torches_Generate(*maze, torches, maxTorches);
     
     // Create particle systems for each torch
@@ -456,7 +456,7 @@ int main(void) {
         
         // ----------- RENDER -----------
         BeginDrawing();
-        ClearBackground((Color){24, 26, 29, 255});
+        ClearBackground((Color){5, 5, 8, 255}); // Much darker background for scary atmosphere
         
         BeginMode3D(cam);
         
@@ -469,23 +469,29 @@ int main(void) {
         if (torches && torchCount > 0) {
             Torches_Render(torches, torchCount);
             
-            // Render flickering light sources (optimized - using cubes instead of spheres)
+            // Render flickering light sources (more dramatic flicker for scary atmosphere)
             for (int i = 0; i < torchCount; i++) {
-                float flicker = 0.7f + 0.3f * sinf(torches[i].flickerTime) + 
-                                0.1f * sinf(torches[i].flickerTime * 3.0f);
+                // More dramatic flickering with random spikes
+                float flicker = 0.5f + 0.4f * sinf(torches[i].flickerTime) + 
+                                0.15f * sinf(torches[i].flickerTime * 3.5f) +
+                                0.1f * sinf(torches[i].flickerTime * 7.0f);
+                // Add occasional dramatic drops
+                if ((int)(torches[i].flickerTime * 10) % 23 == 0) {
+                    flicker *= 0.3f; // Sudden dimming
+                }
                 float intensity = torches[i].baseIntensity * flicker;
                 
                 Vector3 lightPos = torches[i].position;
                 lightPos.y += 0.3f;
                 
-                // Draw light glow (using cube for better performance)
+                // Draw light glow (using cube for better performance, dimmer for atmosphere)
                 Color lightColor = (Color){
-                    (unsigned char)(255 * intensity),
-                    (unsigned char)(180 * intensity),
-                    (unsigned char)(100 * intensity),
+                    (unsigned char)(220 * intensity), // Slightly dimmer
+                    (unsigned char)(150 * intensity),
+                    (unsigned char)(80 * intensity),
                     255
                 };
-                float lightSize = 0.15f * intensity;
+                float lightSize = 0.12f * intensity; // Slightly smaller
                 DrawCube(lightPos, lightSize, lightSize, lightSize, lightColor);
             }
             

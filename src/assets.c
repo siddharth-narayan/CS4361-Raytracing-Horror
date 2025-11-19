@@ -125,7 +125,7 @@ void Assets_Unload(GameAssets* assets) {
     free(assets);
 }
 
-// Generate torches on walls at regular intervals
+// Generate torches on walls randomly (sparse placement for scary atmosphere)
 int Torches_Generate(const Maze* maze, Torch** outTorches, int maxTorches) {
     if (!maze || !outTorches || maxTorches <= 0) return 0;
     
@@ -133,92 +133,105 @@ int Torches_Generate(const Maze* maze, Torch** outTorches, int maxTorches) {
     if (!*outTorches) return 0;
     
     int count = 0;
-    const float torchSpacing = 12.0f; // Place torches every 12 units (reduced frequency for performance)
     const float torchHeight = 2.0f;  // Height on wall
     const float wallOffset = 0.11f;  // Slight offset from wall surface
+    const float torchPlacementChance = 0.08f; // Only 8% of walls get torches (sparse and scary)
     
-    // Iterate through cells and place torches on walls
-    for (int y = 0; y < maze->height && count < maxTorches; y++) {
-        for (int x = 0; x < maze->width && count < maxTorches; x++) {
+    // Collect all wall positions first
+    typedef struct {
+        int x, y;
+        int direction; // 0=N, 1=S, 2=W, 3=E
+        float worldX, worldZ;
+    } WallPos;
+    
+    WallPos* walls = (WallPos*)malloc(maze->width * maze->height * 4 * sizeof(WallPos));
+    int wallCount = 0;
+    
+    // Collect all walls
+    for (int y = 0; y < maze->height; y++) {
+        for (int x = 0; x < maze->width; x++) {
             float worldX = (x - maze->width * 0.5f + 0.5f) * maze->cellSize;
             float worldZ = (y - maze->height * 0.5f + 0.5f) * maze->cellSize;
             float halfCell = maze->cellSize * 0.5f;
             
-            // Check each wall direction
-            // North wall
             if (Maze_HasWall(maze, x, y, MAZE_NORTH)) {
-                // Place torch at intervals
-                float cellStartX = worldX - halfCell;
-                for (float offset = 0.5f; offset < maze->cellSize && count < maxTorches; offset += torchSpacing) {
-                    (*outTorches)[count].position = (Vector3){
-                        cellStartX + offset,
-                        torchHeight,
-                        worldZ - halfCell - wallOffset
-                    };
-                    (*outTorches)[count].normal = (Vector3){0, 0, 1}; // Facing south
-                    (*outTorches)[count].flickerTime = (float)(rand() % 1000) / 1000.0f * 6.28f; // Random phase
-                    (*outTorches)[count].baseIntensity = 0.8f + ((float)(rand() % 20) / 100.0f); // Slight variation
-                    count++;
-                }
+                walls[wallCount++] = (WallPos){x, y, 0, worldX, worldZ - halfCell};
             }
-            
-            // South wall
             if (Maze_HasWall(maze, x, y, MAZE_SOUTH)) {
-                float cellStartX = worldX - halfCell;
-                for (float offset = 0.5f; offset < maze->cellSize && count < maxTorches; offset += torchSpacing) {
-                    (*outTorches)[count].position = (Vector3){
-                        cellStartX + offset,
-                        torchHeight,
-                        worldZ + halfCell + wallOffset
-                    };
-                    (*outTorches)[count].normal = (Vector3){0, 0, -1}; // Facing north
-                    (*outTorches)[count].flickerTime = (float)(rand() % 1000) / 1000.0f * 6.28f;
-                    (*outTorches)[count].baseIntensity = 0.8f + ((float)(rand() % 20) / 100.0f);
-                    count++;
-                }
+                walls[wallCount++] = (WallPos){x, y, 1, worldX, worldZ + halfCell};
             }
-            
-            // West wall
             if (Maze_HasWall(maze, x, y, MAZE_WEST)) {
-                float cellStartZ = worldZ - halfCell;
-                for (float offset = 0.5f; offset < maze->cellSize && count < maxTorches; offset += torchSpacing) {
-                    (*outTorches)[count].position = (Vector3){
-                        worldX - halfCell - wallOffset,
-                        torchHeight,
-                        cellStartZ + offset
-                    };
-                    (*outTorches)[count].normal = (Vector3){1, 0, 0}; // Facing east
-                    (*outTorches)[count].flickerTime = (float)(rand() % 1000) / 1000.0f * 6.28f;
-                    (*outTorches)[count].baseIntensity = 0.8f + ((float)(rand() % 20) / 100.0f);
-                    count++;
-                }
+                walls[wallCount++] = (WallPos){x, y, 2, worldX - halfCell, worldZ};
             }
-            
-            // East wall
             if (Maze_HasWall(maze, x, y, MAZE_EAST)) {
-                float cellStartZ = worldZ - halfCell;
-                for (float offset = 0.5f; offset < maze->cellSize && count < maxTorches; offset += torchSpacing) {
-                    (*outTorches)[count].position = (Vector3){
-                        worldX + halfCell + wallOffset,
-                        torchHeight,
-                        cellStartZ + offset
-                    };
-                    (*outTorches)[count].normal = (Vector3){-1, 0, 0}; // Facing west
-                    (*outTorches)[count].flickerTime = (float)(rand() % 1000) / 1000.0f * 6.28f;
-                    (*outTorches)[count].baseIntensity = 0.8f + ((float)(rand() % 20) / 100.0f);
-                    count++;
-                }
+                walls[wallCount++] = (WallPos){x, y, 3, worldX + halfCell, worldZ};
             }
         }
     }
     
+    // Randomly place torches on a small percentage of walls
+    for (int i = 0; i < wallCount && count < maxTorches; i++) {
+        // Random chance to place a torch on this wall
+        if ((float)rand() / (float)RAND_MAX < torchPlacementChance) {
+            WallPos* wall = &walls[i];
+            float halfCell = maze->cellSize * 0.5f;
+            
+            // Random position along the wall
+            float randomOffset = ((float)rand() / (float)RAND_MAX) * (maze->cellSize - 0.5f) + 0.25f;
+            
+            switch (wall->direction) {
+                case 0: // North
+                    (*outTorches)[count].position = (Vector3){
+                        wall->worldX - halfCell + randomOffset,
+                        torchHeight,
+                        wall->worldZ - wallOffset
+                    };
+                    (*outTorches)[count].normal = (Vector3){0, 0, 1};
+                    break;
+                case 1: // South
+                    (*outTorches)[count].position = (Vector3){
+                        wall->worldX - halfCell + randomOffset,
+                        torchHeight,
+                        wall->worldZ + wallOffset
+                    };
+                    (*outTorches)[count].normal = (Vector3){0, 0, -1};
+                    break;
+                case 2: // West
+                    (*outTorches)[count].position = (Vector3){
+                        wall->worldX - wallOffset,
+                        torchHeight,
+                        wall->worldZ - halfCell + randomOffset
+                    };
+                    (*outTorches)[count].normal = (Vector3){1, 0, 0};
+                    break;
+                case 3: // East
+                    (*outTorches)[count].position = (Vector3){
+                        wall->worldX + wallOffset,
+                        torchHeight,
+                        wall->worldZ - halfCell + randomOffset
+                    };
+                    (*outTorches)[count].normal = (Vector3){-1, 0, 0};
+                    break;
+            }
+            
+            // Random flicker phase and intensity variation
+            (*outTorches)[count].flickerTime = (float)(rand() % 1000) / 1000.0f * 6.28f;
+            (*outTorches)[count].baseIntensity = 0.6f + ((float)(rand() % 30) / 100.0f); // More variation, slightly dimmer
+            
+            count++;
+        }
+    }
+    
+    free(walls);
     return count;
 }
 
-// Update torch flickering
+// Update torch flickering (more erratic for scary atmosphere)
 void Torches_Update(Torch* torches, int count, float dt) {
     for (int i = 0; i < count; i++) {
-        torches[i].flickerTime += dt * 8.0f; // Flicker speed
+        // Variable flicker speed for more erratic behavior
+        float speed = 6.0f + 4.0f * sinf(torches[i].flickerTime * 0.5f);
+        torches[i].flickerTime += dt * speed;
         if (torches[i].flickerTime > 6.28f) {
             torches[i].flickerTime -= 6.28f;
         }
