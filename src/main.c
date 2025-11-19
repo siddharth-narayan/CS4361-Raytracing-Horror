@@ -5,6 +5,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <time.h>
+#include <stdio.h>
 
 // ---------- Game Constants ----------
 #define MAZE_WIDTH           15      // Number of cells horizontally
@@ -25,6 +26,8 @@
 #define SCARY_CHAR_SPEED     3.5f    // Scary character movement speed (slightly slower than player)
 #define SCARY_CHAR_RADIUS    0.35f   // Collision radius
 #define SCARY_CHAR_HEIGHT    2.2f    // Height of scary character
+
+#define BEST_RECORD_FILE     "best_record.txt"  // File to store best record
 
 // Game state
 typedef enum {
@@ -72,11 +75,34 @@ static bool CollidesAny(Vector2 c, float r, const WallRect* walls, int count) {
     return false;
 }
 
+// Load best record from file
+static float LoadBestRecord(void) {
+    FILE* file = fopen(BEST_RECORD_FILE, "r");
+    if (file) {
+        float bestTime = 0.0f;
+        if (fscanf(file, "%f", &bestTime) == 1) {
+            fclose(file);
+            return bestTime;
+        }
+        fclose(file);
+    }
+    return -1.0f; // No record yet
+}
+
+// Save best record to file
+static void SaveBestRecord(float time) {
+    FILE* file = fopen(BEST_RECORD_FILE, "w");
+    if (file) {
+        fprintf(file, "%.2f", time);
+        fclose(file);
+    }
+}
+
 // Initialize game (generate maze, reset player)
 static void InitGame(Maze** maze, WallRect** walls, int* wallCount, Vector3* playerPos, 
                      float* yaw, float* pitch, GameState* gameState,
                      Torch** torches, int* torchCount, ParticleSystem*** particleSystems,
-                     ScaryCharacter* scaryChars, int scaryCharCount) {
+                     ScaryCharacter* scaryChars, int scaryCharCount, float* gameTimer) {
     // Free old maze if exists
     if (*maze) {
         Maze_Destroy(*maze);
@@ -174,6 +200,7 @@ static void InitGame(Maze** maze, WallRect** walls, int* wallCount, Vector3* pla
     *yaw = 0.0f;
     *pitch = 0.0f;
     *gameState = GAME_STATE_PLAYING;
+    *gameTimer = 0.0f; // Reset timer
 }
 
 // Static cube model for textured rendering
@@ -373,9 +400,13 @@ int main(void) {
     // Scary characters
     ScaryCharacter scaryChars[SCARY_CHAR_COUNT] = {0};
     
+    // Timer and best record
+    float gameTimer = 0.0f;
+    float bestRecord = LoadBestRecord();
+    
     // Initialize game
     InitGame(&maze, &walls, &wallCount, &playerPos, &yaw, &pitch, &gameState,
-             &torches, &torchCount, &particleSystems, scaryChars, SCARY_CHAR_COUNT);
+             &torches, &torchCount, &particleSystems, scaryChars, SCARY_CHAR_COUNT, &gameTimer);
     
     // Main game loop
     while (!WindowShouldClose()) {
@@ -391,7 +422,12 @@ int main(void) {
         // Restart game
         if (IsKeyPressed(KEY_R)) {
             InitGame(&maze, &walls, &wallCount, &playerPos, &yaw, &pitch, &gameState,
-                     &torches, &torchCount, &particleSystems, scaryChars, SCARY_CHAR_COUNT);
+                     &torches, &torchCount, &particleSystems, scaryChars, SCARY_CHAR_COUNT, &gameTimer);
+        }
+        
+        // Update timer (only when playing)
+        if (gameState == GAME_STATE_PLAYING) {
+            gameTimer += dt;
         }
         
         // Update torches
@@ -552,6 +588,11 @@ int main(void) {
             Maze_WorldToCell(maze, playerPos.x, playerPos.z, &cellX, &cellY);
             if (Maze_IsExit(maze, cellX, cellY)) {
                 gameState = GAME_STATE_WON;
+                // Update best record if this is better (or no record exists)
+                if (bestRecord < 0.0f || gameTimer < bestRecord) {
+                    bestRecord = gameTimer;
+                    SaveBestRecord(bestRecord);
+                }
             }
         }
         
@@ -648,6 +689,14 @@ int main(void) {
         if (gameState == GAME_STATE_PLAYING) {
             DrawText("WASD: move | Shift: run | Space: jump | F: toggle mouse | R: restart | Esc: quit",
                      20, 20, 18, RAYWHITE);
+            
+            // Display timer
+            char timerText[64];
+            int minutes = (int)(gameTimer / 60.0f);
+            int seconds = (int)gameTimer % 60;
+            int milliseconds = (int)((gameTimer - (int)gameTimer) * 100.0f);
+            snprintf(timerText, sizeof(timerText), "Time: %02d:%02d.%02d", minutes, seconds, milliseconds);
+            DrawText(timerText, 20, 50, 24, YELLOW);
         } else if (gameState == GAME_STATE_WON) {
             // Win screen
             int screenWidth = GetScreenWidth();
@@ -660,13 +709,37 @@ int main(void) {
             const char* winText = "YOU WIN!";
             int fontSize = 60;
             int textWidth = MeasureText(winText, fontSize);
-            DrawText(winText, (screenWidth - textWidth) / 2, screenHeight / 2 - 60, fontSize, GREEN);
+            DrawText(winText, (screenWidth - textWidth) / 2, screenHeight / 2 - 120, fontSize, GREEN);
+            
+            // Display completion time
+            char timeText[128];
+            int minutes = (int)(gameTimer / 60.0f);
+            int seconds = (int)gameTimer % 60;
+            int milliseconds = (int)((gameTimer - (int)gameTimer) * 100.0f);
+            snprintf(timeText, sizeof(timeText), "Time: %02d:%02d.%02d", minutes, seconds, milliseconds);
+            fontSize = 32;
+            textWidth = MeasureText(timeText, fontSize);
+            DrawText(timeText, (screenWidth - textWidth) / 2, screenHeight / 2 - 40, fontSize, YELLOW);
+            
+            // Display best record
+            char bestText[128];
+            if (bestRecord >= 0.0f) {
+                int bestMinutes = (int)(bestRecord / 60.0f);
+                int bestSeconds = (int)bestRecord % 60;
+                int bestMilliseconds = (int)((bestRecord - (int)bestRecord) * 100.0f);
+                snprintf(bestText, sizeof(bestText), "Best Record: %02d:%02d.%02d", bestMinutes, bestSeconds, bestMilliseconds);
+            } else {
+                snprintf(bestText, sizeof(bestText), "Best Record: --:--.--");
+            }
+            fontSize = 28;
+            textWidth = MeasureText(bestText, fontSize);
+            DrawText(bestText, (screenWidth - textWidth) / 2, screenHeight / 2 + 10, fontSize, GOLD);
             
             // Restart instruction
             const char* restartText = "Press R to restart or Esc to quit";
             fontSize = 24;
             textWidth = MeasureText(restartText, fontSize);
-            DrawText(restartText, (screenWidth - textWidth) / 2, screenHeight / 2 + 20, fontSize, RAYWHITE);
+            DrawText(restartText, (screenWidth - textWidth) / 2, screenHeight / 2 + 60, fontSize, RAYWHITE);
         } else if (gameState == GAME_STATE_GAMEOVER) {
             // Game over screen
             int screenWidth = GetScreenWidth();
