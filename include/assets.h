@@ -1,5 +1,4 @@
-#ifndef ASSETS_H
-#define ASSETS_H
+#pragma once
 
 #include "raylib.h"
 #include "maze.h"
@@ -61,6 +60,4 @@ void ParticleSystem_Render(const ParticleSystem* ps);
 
 // Lighting functions
 void Lighting_UpdateTorchLights(const Torch* torches, int count, float time);
-
-#endif // ASSETS_H
 

@@ -1,5 +1,4 @@
-#ifndef MAZE_H
-#define MAZE_H
+#pragma once
 
 #include "raylib.h"
 #include <stdbool.h>
@@ -36,6 +35,4 @@ int Maze_GetWallRects(const Maze* maze, WallRect* outRects, int maxRects);
 Vector2 Maze_CellToWorld(const Maze* maze, int cellX, int cellY);
 void Maze_WorldToCell(const Maze* maze, float worldX, float worldZ, int* outCellX, int* outCellY);
 bool Maze_IsExit(const Maze* maze, int cellX, int cellY);
-
-#endif
 
