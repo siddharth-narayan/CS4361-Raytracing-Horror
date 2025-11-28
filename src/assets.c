@@ -252,11 +252,10 @@ int Torches_Generate(const Maze* maze, Torch** outTorches, int maxTorches) {
     return count;
 }
 
-// update the torch flickering (more erratic for scary atmosphere)
+// update the torch flickering
 void Torches_Update(Torch* torches, int count, float dt) {
     for (int i = 0; i < count; i++) {
-        // Variable flicker speed for more erratic behavior
-        float speed = 6.0f + 4.0f * sinf(torches[i].flickerTime * 0.5f);
+        float speed = 1.5f + 0.3f * sinf(torches[i].flickerTime * 0.3f);
         torches[i].flickerTime += dt * speed;
         if (torches[i].flickerTime > 6.28f) {
             torches[i].flickerTime -= 6.28f;

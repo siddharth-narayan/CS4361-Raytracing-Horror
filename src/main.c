@@ -320,24 +320,13 @@ static float CalculateLightIntensity(Vector3 pos, const Torch* torches, int torc
         float dz = pos.z - torches[i].position.z;
         float dist = sqrtf(dx*dx + dy*dy + dz*dz);
         
-        // Calculate flicker intensity
-        float baseFlicker = 0.4f + 0.5f * sinf(torches[i].flickerTime) + 
-                           0.2f * sinf(torches[i].flickerTime * 3.5f) +
-                           0.15f * sinf(torches[i].flickerTime * 7.0f);
+        // Calculate flicker intensity (subtle, minimal)
+        float baseFlicker = 0.92f + 0.08f * sinf(torches[i].flickerTime);
         
-        if ((int)(torches[i].flickerTime * 8) % 37 == 0) {
-            baseFlicker *= 0.15f;
-        }
-        
-        float globalFlicker = 1.0f;
-        if ((int)(globalTime * 2.0f) % 73 == 0) {
-            globalFlicker = 0.3f;
-        }
-        
-        float intensity = torches[i].baseIntensity * baseFlicker * globalFlicker;
+        float intensity = torches[i].baseIntensity * baseFlicker;
         
         // Distance falloff (inverse square with max range)
-        float lightRange = 6.0f;
+        float lightRange = 3.0f;
         float falloff = 1.0f - clampf(dist / lightRange, 0.0f, 1.0f);
         falloff = falloff * falloff; // Quadratic falloff
         
@@ -870,28 +859,10 @@ int main(void) {
             float globalTime = GetTime();
             
             for (int i = 0; i < torchCount; i++) {
-                // Enhanced horror flickering with more dramatic effects
-                float baseFlicker = 0.4f + 0.5f * sinf(torches[i].flickerTime) + 
-                                   0.2f * sinf(torches[i].flickerTime * 3.5f) +
-                                   0.15f * sinf(torches[i].flickerTime * 7.0f) +
-                                   0.1f * sinf(torches[i].flickerTime * 11.3f);
+                // Subtle, minimal flickering
+                float baseFlicker = 0.92f + 0.08f * sinf(torches[i].flickerTime);
                 
-                // Occasional dramatic power outages (more frequent for horror)
-                if ((int)(torches[i].flickerTime * 8) % 37 == 0) {
-                    baseFlicker *= 0.15f; // Almost complete darkness
-                }
-                // Random dramatic flickers
-                if ((int)(torches[i].flickerTime * 15) % 47 == 0) {
-                    baseFlicker *= 0.4f;
-                }
-                
-                // Global horror effect - occasional "strobe" moments
-                float globalFlicker = 1.0f;
-                if ((int)(globalTime * 2.0f) % 73 == 0) {
-                    globalFlicker = 0.3f; // Brief darkening
-                }
-                
-                float intensity = torches[i].baseIntensity * baseFlicker * globalFlicker;
+                float intensity = torches[i].baseIntensity * baseFlicker;
                 
                 Vector3 lightPos = torches[i].position;
                 lightPos.y += 0.3f;
@@ -913,11 +884,11 @@ int main(void) {
                     (unsigned char)(60 * blueIntensity),
                     255
                 };
-                float lightSize = 0.18f * intensity;
+                float lightSize = 0.08f * intensity;
                 DrawCube(lightPos, lightSize, lightSize, lightSize, lightColor);
                 
-                // Volumetric light sphere (much larger for dramatic effect)
-                float volumetricSize = 4.5f * intensity;  // Increased from 1.5f
+                // Volumetric light sphere (smaller, subtle)
+                float volumetricSize = 1.2f * intensity;
                 float volumetricAlpha = intensity * 0.25f;
                 if (volumetricAlpha > 0.25f) volumetricAlpha = 0.25f;
                 Color volumetricColor = (Color){
@@ -932,9 +903,9 @@ int main(void) {
                 DrawSphere(lightPos, volumetricSize * 0.4f, volumetricColor);
                 DrawSphere(lightPos, volumetricSize * 0.2f, volumetricColor);
                 
-                // Light pool on the floor (dramatic visible light area)
+                // Light pool on the floor (smaller, subtle)
                 Vector3 floorLightPos = (Vector3){lightPos.x, 0.05f, lightPos.z};
-                float poolRadius = 3.5f * intensity;  // Large visible pool
+                float poolRadius = 1.0f * intensity;
                 float poolAlpha = intensity * 0.4f;
                 if (poolAlpha > 0.4f) poolAlpha = 0.4f;
                 
@@ -986,7 +957,7 @@ int main(void) {
                         }
                         
                         // Darken areas far from torches
-                        float lightInfluence = 1.0f - clampf((minDist - 2.0f) / 8.0f, 0.0f, 1.0f);
+                        float lightInfluence = 1.0f - clampf((minDist - 1.0f) / 3.0f, 0.0f, 1.0f);
                         float darkness = 1.0f - lightInfluence;
                         
                         if (darkness > 0.1f) {
@@ -1032,7 +1003,7 @@ int main(void) {
                 }
                 
                 // Darker when far from torches, slightly lit when near (horror effect)
-                float torchInfluence = 1.0f - clampf(minTorchDist / 8.0f, 0.0f, 1.0f);
+                float torchInfluence = 1.0f - clampf(minTorchDist / 3.0f, 0.0f, 1.0f);
                 float baseDarkness = 0.1f + torchInfluence * 0.15f;
                 
                 // draw a dark, scary character (dark red/black cube with slight glow)
