@@ -105,6 +105,19 @@ GameAssets* Assets_Load(void) {
     assets->wallTexture = GenerateStoneWallTexture(256, 256);
     assets->floorTexture = GenerateWoodFloorTexture(256, 256);
     assets->ceilingTexture = GenerateCeilingTexture(256, 256);
+    
+    assets->horrorMusic = LoadMusicStream("assets/horror.mp3");
+    if (assets->horrorMusic.frameCount == 0) {
+        assets->horrorMusic = LoadMusicStream("horror.mp3");
+    }
+    
+    if (assets->horrorMusic.frameCount > 0) {
+        assets->horrorMusic.looping = true;
+        TraceLog(LOG_INFO, "Horror music loaded successfully");
+    } else {
+        TraceLog(LOG_WARNING, "Failed to load horror.mp3 - continuing without music");
+    }
+    
     assets->loaded = true;
     
     return assets;
@@ -116,6 +129,11 @@ void Assets_Unload(GameAssets* assets) {
     UnloadTexture(assets->wallTexture);
     UnloadTexture(assets->floorTexture);
     UnloadTexture(assets->ceilingTexture);
+    
+    if (assets->horrorMusic.frameCount > 0) {
+        UnloadMusicStream(assets->horrorMusic);
+    }
+    
     assets->loaded = false;
     free(assets);
 }
@@ -131,7 +149,6 @@ int Torches_Generate(const Maze* maze, Torch** outTorches, int maxTorches) {
     const float wallOffset = 0.11f;
     const float torchPlacementChance = 0.08f;
     
-    // collect all wall positions first
     typedef struct {
         int x, y;
         int direction; // 0=N, 1=S, 2=W, 3=E
@@ -141,7 +158,6 @@ int Torches_Generate(const Maze* maze, Torch** outTorches, int maxTorches) {
     WallPos* walls = (WallPos*)malloc(maze->width * maze->height * 4 * sizeof(WallPos));
     int wallCount = 0;
     
-    // Collect all walls
     for (int y = 0; y < maze->height; y++) {
         for (int x = 0; x < maze->width; x++) {
             float worldX = (x - maze->width * 0.5f + 0.5f) * maze->cellSize;

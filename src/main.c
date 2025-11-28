@@ -381,6 +381,9 @@ static void RenderMaze(const Maze* maze, const GameAssets* assets) {
 int main(void) {
     srand((unsigned int)time(NULL));
     
+    // Initialize audio device
+    InitAudioDevice();
+    
     // Set up the window
     SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT | FLAG_MSAA_4X_HINT);
     InitWindow(1280, 720, "3D Maze Horror");
@@ -434,13 +437,22 @@ int main(void) {
     // Menu state variables
     bool gameInitialized = false;
     
-    // Start the main game loop
+        // Start the main game loop
     while (!WindowShouldClose()) {
         float dt = GetFrameTime();
+        
+        // Update music stream (must be called every frame if music is playing)
+        if (assets && assets->horrorMusic.frameCount > 0) {
+            UpdateMusicStream(assets->horrorMusic);
+        }
         
         // Handle menu state
         if (gameState == GAME_STATE_MENU) {
             EnableCursor();
+            if (assets && assets->horrorMusic.frameCount > 0 && IsMusicStreamPlaying(assets->horrorMusic)) {
+                StopMusicStream(assets->horrorMusic);
+            }
+            
             // Start game on Enter or Space
             if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE)) {
                 // Initialize the game
@@ -450,6 +462,11 @@ int main(void) {
                 gameInitialized = true;
                 mouseCaptured = true;
                 DisableCursor();
+                
+                // Start playing horror music when game starts
+                if (assets && assets->horrorMusic.frameCount > 0) {
+                    PlayMusicStream(assets->horrorMusic);
+                }
             }
         }
         
@@ -463,11 +480,21 @@ int main(void) {
         // Restart the game (only when game is initialized)
         if (gameInitialized && IsKeyPressed(KEY_R) && 
             (gameState == GAME_STATE_WON || gameState == GAME_STATE_GAMEOVER)) {
+            // Stop music before restarting
+            if (assets && assets->horrorMusic.frameCount > 0) {
+                StopMusicStream(assets->horrorMusic);
+            }
+            
             InitGame(&maze, &walls, &wallCount, &playerPos, &yaw, &pitch, &gameState,
                      &torches, &torchCount, &particleSystems, scaryChars, SCARY_CHAR_COUNT, &gameTimer);
             gameState = GAME_STATE_PLAYING;
             mouseCaptured = true;
             DisableCursor();
+            
+            // Restart music
+            if (assets && assets->horrorMusic.frameCount > 0) {
+                PlayMusicStream(assets->horrorMusic);
+            }
         }
         // timer update (only when game is initialized)
         if (gameInitialized && gameState == GAME_STATE_PLAYING) {
@@ -887,6 +914,9 @@ int main(void) {
     // Cleanup static models
     CleanupCubeModel();
     CleanupPlaneModel();
+    
+    // Close audio device
+    CloseAudioDevice();
     
     CloseWindow();
     return 0;
