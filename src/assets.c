@@ -5,7 +5,8 @@
 #include <string.h>
 
 Texture2D GenerateStoneWallTexture(int width, int height) {
-    Image img = GenImageColor(width, height, (Color){80, 80, 85, 255});
+    // Darker base color for horror atmosphere (5% lighter)
+    Image img = GenImageColor(width, height, (Color){47, 47, 53, 255});
     
     // access the pixel data directly
     Color* pixels = (Color*)img.data;
@@ -18,13 +19,13 @@ Texture2D GenerateStoneWallTexture(int width, int height) {
             bool isMortar = (gridX < 2 || gridY < 2 || gridX > 30 || gridY > 30);
             
             if (isMortar) {
-                pixels[y * width + x] = (Color){50, 50, 55, 255};
+                pixels[y * width + x] = (Color){26, 26, 32, 255};
             } else {
-                // Add noise for stone texture
+                // Add noise for stone texture (darker for horror)
                 float noise = ((float)(rand() % 100) / 100.0f) * 0.3f;
-                int baseR = 80 + (int)(noise * 40);
-                int baseG = 80 + (int)(noise * 30);
-                int baseB = 85 + (int)(noise * 25);
+                int baseR = 47 + (int)(noise * 26);
+                int baseG = 47 + (int)(noise * 21);
+                int baseB = 53 + (int)(noise * 16);
                 pixels[y * width + x] = (Color){baseR, baseG, baseB, 255};
             }
         }
@@ -37,8 +38,8 @@ Texture2D GenerateStoneWallTexture(int width, int height) {
 
 // Generate procedural wooden floor texture
 Texture2D GenerateWoodFloorTexture(int width, int height) {
-    // Create image using raylib (it manages the memory)
-    Image img = GenImageColor(width, height, (Color){120, 90, 60, 255});
+    // Darker base color for horror atmosphere (5% lighter)
+    Image img = GenImageColor(width, height, (Color){53, 37, 26, 255});
     
     // Access pixel data directly
     Color* pixels = (Color*)img.data;
@@ -54,15 +55,15 @@ Texture2D GenerateWoodFloorTexture(int width, int height) {
             float grain = sinf((float)x * 0.1f + (float)plankIdx * 0.5f) * 0.1f;
             float variation = ((float)(rand() % 100) / 100.0f) * 0.2f;
             
-            int r = 120 + (int)((grain + variation) * 40);
-            int g = 90 + (int)((grain + variation) * 30);
-            int b = 60 + (int)((grain + variation) * 20);
+            int r = 53 + (int)((grain + variation) * 26);
+            int g = 37 + (int)((grain + variation) * 21);
+            int b = 26 + (int)((grain + variation) * 16);
             
-            // Plank boundaries
+            // Plank boundaries (darker)
             if ((y % plankHeight) < 2) {
-                r = (int)(r * 0.7f);
-                g = (int)(g * 0.7f);
-                b = (int)(b * 0.7f);
+                r = (int)(r * 0.6f);
+                g = (int)(g * 0.6f);
+                b = (int)(b * 0.6f);
             }
             
             pixels[y * width + x] = (Color){r, g, b, 255};
@@ -76,19 +77,19 @@ Texture2D GenerateWoodFloorTexture(int width, int height) {
 
 // Generate simple ceiling texture
 Texture2D GenerateCeilingTexture(int width, int height) {
-    // Create image using raylib (it manages the memory)
-    Image img = GenImageColor(width, height, (Color){150, 150, 155, 255});
+    // Much darker ceiling for horror atmosphere (5% lighter)
+    Image img = GenImageColor(width, height, (Color){21, 21, 26, 255});
     
     // Access pixel data directly
     Color* pixels = (Color*)img.data;
     
-    // Add subtle noise
+    // Add subtle noise (darker)
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
             float noise = ((float)(rand() % 100) / 100.0f) * 0.15f;
-            int r = 150 + (int)(noise * 20);
-            int g = 150 + (int)(noise * 20);
-            int b = 155 + (int)(noise * 20);
+            int r = 21 + (int)(noise * 11);
+            int g = 21 + (int)(noise * 11);
+            int b = 26 + (int)(noise * 11);
             pixels[y * width + x] = (Color){r, g, b, 255};
         }
     }
@@ -118,6 +119,18 @@ GameAssets* Assets_Load(void) {
         TraceLog(LOG_WARNING, "Failed to load horror.mp3 - continuing without music");
     }
     
+    // Load jumpscare sound - try assets directory first, then current directory
+    assets->jumpScareSound = LoadSound("assets/jump.mp3");
+    if (assets->jumpScareSound.frameCount == 0) {
+        assets->jumpScareSound = LoadSound("jump.mp3");
+    }
+    
+    if (assets->jumpScareSound.frameCount > 0) {
+        TraceLog(LOG_INFO, "Jumpscare sound loaded successfully");
+    } else {
+        TraceLog(LOG_WARNING, "Failed to load jump.mp3 - continuing without jumpscare sound");
+    }
+    
     assets->loaded = true;
     
     return assets;
@@ -132,6 +145,10 @@ void Assets_Unload(GameAssets* assets) {
     
     if (assets->horrorMusic.frameCount > 0) {
         UnloadMusicStream(assets->horrorMusic);
+    }
+    
+    if (assets->jumpScareSound.frameCount > 0) {
+        UnloadSound(assets->jumpScareSound);
     }
     
     assets->loaded = false;
@@ -272,7 +289,7 @@ ParticleSystem* ParticleSystem_Create(int maxParticles) {
     
     ps->maxParticles = maxParticles;
     ps->activeParticles = 0;
-    ps->emitRate = 15.0f;
+    ps->emitRate = 8.0f;  // Reduced from 15.0f for smoother effect
     ps->emitAccumulator = 0.0f;
     ps->emitterPos = (Vector3){0, 0, 0};
     
@@ -301,14 +318,19 @@ void ParticleSystem_Update(ParticleSystem* ps, Vector3 emitterPos, float dt) {
         Particle* p = &ps->particles[ps->activeParticles];
         p->position = emitterPos;
         p->position.y += 0.25f; // Slight offset above torch
+        
+        // Much smoother, more vertical movement with minimal horizontal spread
+        float horizontalSpread = 0.02f;  // Reduced from ~0.2f
+        float verticalSpeed = 0.15f + ((float)(rand() % 30) / 1000.0f);  // Reduced from ~0.6f
+        
         p->velocity = (Vector3){
-            ((float)(rand() % 200) - 100.0f) / 500.0f,
-            ((float)(rand() % 300) + 100.0f) / 500.0f,
-            ((float)(rand() % 200) - 100.0f) / 500.0f
+            ((float)(rand() % 100) - 50.0f) / 2500.0f * horizontalSpread,  // Much smaller X movement
+            verticalSpeed,  // Smoother upward movement
+            ((float)(rand() % 100) - 50.0f) / 2500.0f * horizontalSpread   // Much smaller Z movement
         };
         p->life = 1.0f;
-        p->maxLife = 0.5f + ((float)(rand() % 50) / 100.0f);
-        p->size = 0.05f + ((float)(rand() % 30) / 1000.0f);
+        p->maxLife = 0.8f + ((float)(rand() % 40) / 100.0f);  // Longer lifetime for smoother fade
+        p->size = 0.06f + ((float)(rand() % 20) / 1000.0f);  // Less size variation
         p->color = (Color){
             255,
             150 + (rand() % 50),
@@ -322,8 +344,8 @@ void ParticleSystem_Update(ParticleSystem* ps, Vector3 emitterPos, float dt) {
     for (int i = 0; i < ps->activeParticles; i++) {
         Particle* p = &ps->particles[i];
         
-        // Update physics
-        p->velocity.y += -2.0f * dt; // Gravity
+        // Update physics with smoother, gentler movement
+        p->velocity.y += -1.2f * dt; // Reduced gravity for smoother, slower fall
         p->position.x += p->velocity.x * dt;
         p->position.y += p->velocity.y * dt;
         p->position.z += p->velocity.z * dt;

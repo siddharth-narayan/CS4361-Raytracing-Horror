@@ -307,8 +307,51 @@ static void CleanupPlaneModel(void) {
     }
 }
 
+// Calculate light intensity at a given position from all torches
+static float CalculateLightIntensity(Vector3 pos, const Torch* torches, int torchCount, float globalTime) {
+    if (!torches || torchCount == 0) return 0.0f;
+    
+    float maxIntensity = 0.0f;
+    
+    for (int i = 0; i < torchCount; i++) {
+        // Calculate distance to torch
+        float dx = pos.x - torches[i].position.x;
+        float dy = pos.y - torches[i].position.y;
+        float dz = pos.z - torches[i].position.z;
+        float dist = sqrtf(dx*dx + dy*dy + dz*dz);
+        
+        // Calculate flicker intensity
+        float baseFlicker = 0.4f + 0.5f * sinf(torches[i].flickerTime) + 
+                           0.2f * sinf(torches[i].flickerTime * 3.5f) +
+                           0.15f * sinf(torches[i].flickerTime * 7.0f);
+        
+        if ((int)(torches[i].flickerTime * 8) % 37 == 0) {
+            baseFlicker *= 0.15f;
+        }
+        
+        float globalFlicker = 1.0f;
+        if ((int)(globalTime * 2.0f) % 73 == 0) {
+            globalFlicker = 0.3f;
+        }
+        
+        float intensity = torches[i].baseIntensity * baseFlicker * globalFlicker;
+        
+        // Distance falloff (inverse square with max range)
+        float lightRange = 6.0f;
+        float falloff = 1.0f - clampf(dist / lightRange, 0.0f, 1.0f);
+        falloff = falloff * falloff; // Quadratic falloff
+        
+        float lightIntensity = intensity * falloff;
+        if (lightIntensity > maxIntensity) {
+            maxIntensity = lightIntensity;
+        }
+    }
+    
+    return maxIntensity;
+}
+
 // Render the maze in 3D
-static void RenderMaze(const Maze* maze, const GameAssets* assets) {
+static void RenderMaze(const Maze* maze, const GameAssets* assets, const Torch* torches, int torchCount, float globalTime) {
     if (!maze || !assets || !assets->loaded) return;
     
     const float halfCell = maze->cellSize * 0.5f;
@@ -323,46 +366,114 @@ static void RenderMaze(const Maze* maze, const GameAssets* assets) {
     // Draw the ceiling
     DrawTexturedPlane((Vector3){0, WALL_HEIGHT, 0}, (Vector2){mazeWidth, mazeHeight}, assets->ceilingTexture);
     
+    // Add darkening overlays to floor and ceiling in unlit areas
+    // Sample points to create gradient darkening
+    int floorSamplesX = 15;
+    int floorSamplesZ = 15;
+    float floorSampleSpacingX = mazeWidth / (float)floorSamplesX;
+    float floorSampleSpacingZ = mazeHeight / (float)floorSamplesZ;
+    
+    for (int sx = 0; sx < floorSamplesX; sx++) {
+        for (int sz = 0; sz < floorSamplesZ; sz++) {
+            float sampleX = -mazeWidth * 0.5f + sx * floorSampleSpacingX + floorSampleSpacingX * 0.5f;
+            float sampleZ = -mazeHeight * 0.5f + sz * floorSampleSpacingZ + floorSampleSpacingZ * 0.5f;
+            
+            // Check floor lighting
+            Vector3 floorPos = (Vector3){sampleX, 0.0f, sampleZ};
+            float floorLight = CalculateLightIntensity(floorPos, torches, torchCount, globalTime);
+            float floorDarkness = 1.0f - clampf(floorLight * 2.5f, 0.0f, 1.0f);
+            
+            if (floorDarkness > 0.15f) {
+                Color floorDark = (Color){0, 0, 0, (unsigned char)(floorDarkness * 200)};
+                DrawPlane((Vector3){sampleX, 0.01f, sampleZ}, 
+                         (Vector2){floorSampleSpacingX * 1.1f, floorSampleSpacingZ * 1.1f}, 
+                         floorDark);
+            }
+            
+            // Check ceiling lighting
+            Vector3 ceilingPos = (Vector3){sampleX, WALL_HEIGHT, sampleZ};
+            float ceilingLight = CalculateLightIntensity(ceilingPos, torches, torchCount, globalTime);
+            float ceilingDarkness = 1.0f - clampf(ceilingLight * 2.0f, 0.0f, 1.0f);
+            
+            if (ceilingDarkness > 0.2f) {
+                Color ceilingDark = (Color){0, 0, 0, (unsigned char)(ceilingDarkness * 220)};
+                DrawPlane((Vector3){sampleX, WALL_HEIGHT - 0.01f, sampleZ}, 
+                         (Vector2){floorSampleSpacingX * 1.1f, floorSampleSpacingZ * 1.1f}, 
+                         ceilingDark);
+            }
+        }
+    }
+    
     // Draw the walls for each cell
     for (int y = 0; y < maze->height; y++) {
         for (int x = 0; x < maze->width; x++) {
             float worldX = (x - maze->width * 0.5f + 0.5f) * maze->cellSize;
             float worldZ = (y - maze->height * 0.5f + 0.5f) * maze->cellSize;
             
+            // Calculate light intensity at wall center for darkening effect
+            Vector3 wallCenter = (Vector3){worldX, wallHalfHeight, worldZ};
+            float lightIntensity = CalculateLightIntensity(wallCenter, torches, torchCount, globalTime);
+            float darkness = 1.0f - clampf(lightIntensity * 2.0f, 0.0f, 1.0f);
+            
             // Draw the north wall
             if (Maze_HasWall(maze, x, y, MAZE_NORTH)) {
-                DrawTexturedCube((Vector3){
+                Vector3 wallPos = (Vector3){
                     worldX,
                     wallHalfHeight,
                     worldZ - halfCell
-                }, (Vector3){maze->cellSize, WALL_HEIGHT, WALL_THICK}, assets->wallTexture);
+                };
+                DrawTexturedCube(wallPos, (Vector3){maze->cellSize, WALL_HEIGHT, WALL_THICK}, assets->wallTexture);
+                
+                // Add darkening overlay if far from light
+                if (darkness > 0.2f) {
+                    Color darkOverlay = (Color){0, 0, 0, (unsigned char)(darkness * 180)};
+                    DrawCube(wallPos, maze->cellSize, WALL_HEIGHT, WALL_THICK + 0.01f, darkOverlay);
+                }
             }
             
             // Draw the south wall
             if (Maze_HasWall(maze, x, y, MAZE_SOUTH)) {
-                DrawTexturedCube((Vector3){
+                Vector3 wallPos = (Vector3){
                     worldX,
                     wallHalfHeight,
                     worldZ + halfCell
-                }, (Vector3){maze->cellSize, WALL_HEIGHT, WALL_THICK}, assets->wallTexture);
+                };
+                DrawTexturedCube(wallPos, (Vector3){maze->cellSize, WALL_HEIGHT, WALL_THICK}, assets->wallTexture);
+                
+                if (darkness > 0.2f) {
+                    Color darkOverlay = (Color){0, 0, 0, (unsigned char)(darkness * 180)};
+                    DrawCube(wallPos, maze->cellSize, WALL_HEIGHT, WALL_THICK + 0.01f, darkOverlay);
+                }
             }
             
             // Draw the west wall
             if (Maze_HasWall(maze, x, y, MAZE_WEST)) {
-                DrawTexturedCube((Vector3){
+                Vector3 wallPos = (Vector3){
                     worldX - halfCell,
                     wallHalfHeight,
                     worldZ
-                }, (Vector3){WALL_THICK, WALL_HEIGHT, maze->cellSize}, assets->wallTexture);
+                };
+                DrawTexturedCube(wallPos, (Vector3){WALL_THICK, WALL_HEIGHT, maze->cellSize}, assets->wallTexture);
+                
+                if (darkness > 0.2f) {
+                    Color darkOverlay = (Color){0, 0, 0, (unsigned char)(darkness * 180)};
+                    DrawCube(wallPos, WALL_THICK + 0.01f, WALL_HEIGHT, maze->cellSize, darkOverlay);
+                }
             }
             
             // Draw the east wall
             if (Maze_HasWall(maze, x, y, MAZE_EAST)) {
-                DrawTexturedCube((Vector3){
+                Vector3 wallPos = (Vector3){
                     worldX + halfCell,
                     wallHalfHeight,
                     worldZ
-                }, (Vector3){WALL_THICK, WALL_HEIGHT, maze->cellSize}, assets->wallTexture);
+                };
+                DrawTexturedCube(wallPos, (Vector3){WALL_THICK, WALL_HEIGHT, maze->cellSize}, assets->wallTexture);
+                
+                if (darkness > 0.2f) {
+                    Color darkOverlay = (Color){0, 0, 0, (unsigned char)(darkness * 180)};
+                    DrawCube(wallPos, WALL_THICK + 0.01f, WALL_HEIGHT, maze->cellSize, darkOverlay);
+                }
             }
         }
     }
@@ -483,6 +594,11 @@ int main(void) {
             // Stop music before restarting
             if (assets && assets->horrorMusic.frameCount > 0) {
                 StopMusicStream(assets->horrorMusic);
+            }
+            
+            // Stop jumpscare sound if playing
+            if (assets && assets->jumpScareSound.frameCount > 0 && IsSoundPlaying(assets->jumpScareSound)) {
+                StopSound(assets->jumpScareSound);
             }
             
             InitGame(&maze, &walls, &wallCount, &playerPos, &yaw, &pitch, &gameState,
@@ -652,6 +768,10 @@ int main(void) {
                     
                     // check collision with the player
                     if (CircleCircleIntersect(playerPos2D, PLAYER_RADIUS, charPos, scaryChars[i].radius)) {
+                        // Play jumpscare sound
+                        if (assets && assets->jumpScareSound.frameCount > 0) {
+                            PlaySound(assets->jumpScareSound);
+                        }
                         gameState = GAME_STATE_GAMEOVER;
                         break;
                     }
@@ -683,7 +803,8 @@ int main(void) {
         
         // start drawing
         BeginDrawing();
-        ClearBackground((Color){5, 5, 8, 255});
+        // Much darker background for horror atmosphere (5% lighter)
+        ClearBackground((Color){3, 2, 4, 255});
         
         // Render menu or game
         if (gameState == GAME_STATE_MENU) {
@@ -740,33 +861,144 @@ int main(void) {
 
         // render the maze with textures
         if (maze) {
-            RenderMaze(maze, assets);
+            RenderMaze(maze, assets, torches, torchCount, GetTime());
         }
         
         if (torches && torchCount > 0) {
             Torches_Render(torches, torchCount);
             
+            float globalTime = GetTime();
+            
             for (int i = 0; i < torchCount; i++) {
-                float flicker = 0.5f + 0.4f * sinf(torches[i].flickerTime) + 
-                                0.15f * sinf(torches[i].flickerTime * 3.5f) +
-                                0.1f * sinf(torches[i].flickerTime * 7.0f);
-                if ((int)(torches[i].flickerTime * 10) % 23 == 0) {
-                    flicker *= 0.3f;
+                // Enhanced horror flickering with more dramatic effects
+                float baseFlicker = 0.4f + 0.5f * sinf(torches[i].flickerTime) + 
+                                   0.2f * sinf(torches[i].flickerTime * 3.5f) +
+                                   0.15f * sinf(torches[i].flickerTime * 7.0f) +
+                                   0.1f * sinf(torches[i].flickerTime * 11.3f);
+                
+                // Occasional dramatic power outages (more frequent for horror)
+                if ((int)(torches[i].flickerTime * 8) % 37 == 0) {
+                    baseFlicker *= 0.15f; // Almost complete darkness
                 }
-                float intensity = torches[i].baseIntensity * flicker;
+                // Random dramatic flickers
+                if ((int)(torches[i].flickerTime * 15) % 47 == 0) {
+                    baseFlicker *= 0.4f;
+                }
+                
+                // Global horror effect - occasional "strobe" moments
+                float globalFlicker = 1.0f;
+                if ((int)(globalTime * 2.0f) % 73 == 0) {
+                    globalFlicker = 0.3f; // Brief darkening
+                }
+                
+                float intensity = torches[i].baseIntensity * baseFlicker * globalFlicker;
                 
                 Vector3 lightPos = torches[i].position;
                 lightPos.y += 0.3f;
                 
-                // draw the light glow
+                // More red/orange horror lighting
+                float redIntensity = intensity * 1.2f;
+                float greenIntensity = intensity * 0.6f;
+                float blueIntensity = intensity * 0.2f;
+                
+                // Clamp to valid color range
+                if (redIntensity > 1.0f) redIntensity = 1.0f;
+                if (greenIntensity > 1.0f) greenIntensity = 1.0f;
+                if (blueIntensity > 1.0f) blueIntensity = 1.0f;
+                
+                // Core light glow (brighter, more visible)
                 Color lightColor = (Color){
-                    (unsigned char)(220 * intensity),
-                    (unsigned char)(150 * intensity),
-                    (unsigned char)(80 * intensity),
+                    (unsigned char)(255 * redIntensity),
+                    (unsigned char)(180 * greenIntensity),
+                    (unsigned char)(60 * blueIntensity),
                     255
                 };
-                float lightSize = 0.12f * intensity;
+                float lightSize = 0.18f * intensity;
                 DrawCube(lightPos, lightSize, lightSize, lightSize, lightColor);
+                
+                // Volumetric light sphere (much larger for dramatic effect)
+                float volumetricSize = 4.5f * intensity;  // Increased from 1.5f
+                float volumetricAlpha = intensity * 0.25f;
+                if (volumetricAlpha > 0.25f) volumetricAlpha = 0.25f;
+                Color volumetricColor = (Color){
+                    (unsigned char)(220 * redIntensity),
+                    (unsigned char)(120 * greenIntensity),
+                    (unsigned char)(40 * blueIntensity),
+                    (unsigned char)(volumetricAlpha * 255)
+                };
+                // Draw multiple layers for volumetric effect with better falloff
+                DrawSphere(lightPos, volumetricSize * 0.8f, volumetricColor);
+                DrawSphere(lightPos, volumetricSize * 0.6f, volumetricColor);
+                DrawSphere(lightPos, volumetricSize * 0.4f, volumetricColor);
+                DrawSphere(lightPos, volumetricSize * 0.2f, volumetricColor);
+                
+                // Light pool on the floor (dramatic visible light area)
+                Vector3 floorLightPos = (Vector3){lightPos.x, 0.05f, lightPos.z};
+                float poolRadius = 3.5f * intensity;  // Large visible pool
+                float poolAlpha = intensity * 0.4f;
+                if (poolAlpha > 0.4f) poolAlpha = 0.4f;
+                
+                // Draw light pool as a colored plane on the floor
+                Color poolColor = (Color){
+                    (unsigned char)(180 * redIntensity),
+                    (unsigned char)(100 * greenIntensity),
+                    (unsigned char)(30 * blueIntensity),
+                    (unsigned char)(poolAlpha * 255)
+                };
+                
+                // Draw multiple concentric circles for smooth falloff
+                for (int layer = 0; layer < 5; layer++) {
+                    float layerRadius = poolRadius * (1.0f - layer * 0.2f);
+                    float layerAlpha = poolAlpha * (1.0f - layer * 0.25f);
+                    if (layerRadius > 0.1f) {
+                        Color layerColor = poolColor;
+                        layerColor.a = (unsigned char)(layerAlpha * 255);
+                        DrawPlane(floorLightPos, (Vector2){layerRadius * 2.0f, layerRadius * 2.0f}, layerColor);
+                    }
+                }
+            }
+            
+            // Render darkening overlay in areas far from torches
+            // This creates dramatic contrast between lit and unlit areas
+            if (maze) {
+                float mazeWidth = maze->width * maze->cellSize;
+                float mazeHeight = maze->height * maze->cellSize;
+                
+                // Sample points on the floor to determine darkness
+                int samplesX = 20;
+                int samplesZ = 20;
+                float sampleSpacingX = mazeWidth / (float)samplesX;
+                float sampleSpacingZ = mazeHeight / (float)samplesZ;
+                
+                for (int sx = 0; sx < samplesX; sx++) {
+                    for (int sz = 0; sz < samplesZ; sz++) {
+                        float sampleX = -mazeWidth * 0.5f + sx * sampleSpacingX + sampleSpacingX * 0.5f;
+                        float sampleZ = -mazeHeight * 0.5f + sz * sampleSpacingZ + sampleSpacingZ * 0.5f;
+                        Vector3 samplePos = (Vector3){sampleX, 0.0f, sampleZ};
+                        
+                        // Find minimum distance to any torch
+                        float minDist = 1000.0f;
+                        for (int i = 0; i < torchCount; i++) {
+                            float dx = samplePos.x - torches[i].position.x;
+                            float dz = samplePos.z - torches[i].position.z;
+                            float dist = sqrtf(dx*dx + dz*dz);
+                            if (dist < minDist) minDist = dist;
+                        }
+                        
+                        // Darken areas far from torches
+                        float lightInfluence = 1.0f - clampf((minDist - 2.0f) / 8.0f, 0.0f, 1.0f);
+                        float darkness = 1.0f - lightInfluence;
+                        
+                        if (darkness > 0.1f) {
+                            // Draw darkening overlay
+                            float overlayAlpha = darkness * 0.6f;
+                            Color darkColor = (Color){0, 0, 0, (unsigned char)(overlayAlpha * 255)};
+                            DrawPlane((Vector3){samplePos.x, 0.02f, samplePos.z}, 
+                                     (Vector2){sampleSpacingX * 1.2f, sampleSpacingZ * 1.2f}, 
+                                     darkColor);
+                        }
+                    }
+                }
             }
             
             // render the particle systems (flames)
@@ -781,21 +1013,72 @@ int main(void) {
         
         // render the scary characters (dark, menacing figures)
         if (gameState == GAME_STATE_PLAYING || gameState == GAME_STATE_GAMEOVER) {
+            float globalTime = GetTime();
+            
             for (int i = 0; i < SCARY_CHAR_COUNT; i++) {
                 Vector3 charRenderPos = scaryChars[i].position;
                 charRenderPos.y = scaryChars[i].height * 0.5f;
                 
+                // Check distance to nearest torch for horror lighting effect
+                float minTorchDist = 1000.0f;
+                if (torches && torchCount > 0) {
+                    for (int j = 0; j < torchCount; j++) {
+                        float dx = charRenderPos.x - torches[j].position.x;
+                        float dy = charRenderPos.y - torches[j].position.y;
+                        float dz = charRenderPos.z - torches[j].position.z;
+                        float dist = sqrtf(dx*dx + dy*dy + dz*dz);
+                        if (dist < minTorchDist) minTorchDist = dist;
+                    }
+                }
+                
+                // Darker when far from torches, slightly lit when near (horror effect)
+                float torchInfluence = 1.0f - clampf(minTorchDist / 8.0f, 0.0f, 1.0f);
+                float baseDarkness = 0.1f + torchInfluence * 0.15f;
+                
                 // draw a dark, scary character (dark red/black cube with slight glow)
                 Color scaryColor = (Color){
-                    (unsigned char)(40 + i * 5), 
+                    (unsigned char)((40 + i * 5) * baseDarkness), 
                     0, 
-                    (unsigned char)(i * 3), 
+                    (unsigned char)((i * 3) * baseDarkness), 
                     255
                 };
                 DrawCube(charRenderPos, scaryChars[i].radius * 2.0f, scaryChars[i].height, scaryChars[i].radius * 2.0f, scaryColor);
                 
-                // add a subtle dark glow around it
-                DrawCubeWires(charRenderPos, scaryChars[i].radius * 2.2f, scaryChars[i].height * 1.1f, scaryChars[i].radius * 2.2f, (Color){80, 0, 0, 100});
+                // add a subtle dark glow around it (pulsing for horror)
+                float pulse = 0.8f + 0.2f * sinf(globalTime * 2.0f + i);
+                DrawCubeWires(charRenderPos, scaryChars[i].radius * 2.2f, scaryChars[i].height * 1.1f, scaryChars[i].radius * 2.2f, 
+                             (Color){(unsigned char)(80 * pulse), 0, 0, (unsigned char)(100 * pulse)});
+            }
+        }
+        
+        // Player flashlight effect (subtle cone of light in front of player)
+        if (gameInitialized && gameState == GAME_STATE_PLAYING) {
+            Vector3 flashlightPos = cam.position;
+            Vector3 flashlightDir = forward;
+            
+            // Draw a subtle light cone in front of player
+            float flashlightIntensity = 0.3f;
+            float flashlightRange = 8.0f;
+            
+            // Multiple light points to simulate a flashlight beam
+            for (int i = 0; i < 3; i++) {
+                float t = 0.3f + i * 0.35f;
+                Vector3 lightPoint = (Vector3){
+                    flashlightPos.x + flashlightDir.x * flashlightRange * t,
+                    flashlightPos.y + flashlightDir.y * flashlightRange * t - 0.5f,
+                    flashlightPos.z + flashlightDir.z * flashlightRange * t
+                };
+                
+                float pointIntensity = flashlightIntensity * (1.0f - t * 0.7f);
+                Color flashlightColor = (Color){
+                    (unsigned char)(200 * pointIntensity),
+                    (unsigned char)(180 * pointIntensity),
+                    (unsigned char)(150 * pointIntensity),
+                    255
+                };
+                
+                float pointSize = 0.15f * pointIntensity;
+                DrawCube(lightPoint, pointSize, pointSize, pointSize, flashlightColor);
             }
         }
         

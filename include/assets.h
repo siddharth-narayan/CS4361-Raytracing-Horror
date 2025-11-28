@@ -10,6 +10,7 @@ typedef struct {
     Texture2D floorTexture;
     Texture2D ceilingTexture;
     Music horrorMusic;
+    Sound jumpScareSound;
     bool loaded;
 } GameAssets;
 
