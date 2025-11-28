@@ -32,6 +32,7 @@
 
 // Game state
 typedef enum {
+    GAME_STATE_MENU,
     GAME_STATE_PLAYING,
     GAME_STATE_WON,
     GAME_STATE_GAMEOVER
@@ -382,7 +383,7 @@ int main(void) {
     
     // Set up the window
     SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT | FLAG_MSAA_4X_HINT);
-    InitWindow(1280, 720, "3D Maze Game | WASD+mouse, Shift run, Space jump, F toggle mouse, R restart");
+    InitWindow(1280, 720, "3D Maze Horror");
     SetTargetFPS(120);
     
     bool mouseCaptured = true;
@@ -391,7 +392,7 @@ int main(void) {
     Maze* maze = NULL;
     WallRect* walls = NULL;
     int wallCount = 0;
-    GameState gameState = GAME_STATE_PLAYING;
+    GameState gameState = GAME_STATE_MENU;
     
     // Set up the player
     Vector3 playerPos = {0.0f, 0.0f, 0.0f};
@@ -430,32 +431,50 @@ int main(void) {
     float gameTimer = 0.0f;
     float bestRecord = LoadBestRecord();
     
-    // Initialize the game
-    InitGame(&maze, &walls, &wallCount, &playerPos, &yaw, &pitch, &gameState,
-             &torches, &torchCount, &particleSystems, scaryChars, SCARY_CHAR_COUNT, &gameTimer);
+    // Menu state variables
+    bool gameInitialized = false;
     
     // Start the main game loop
     while (!WindowShouldClose()) {
         float dt = GetFrameTime();
         
-        // Toggle the mouse capture
-        if (IsKeyPressed(KEY_F)) {
+        // Handle menu state
+        if (gameState == GAME_STATE_MENU) {
+            EnableCursor();
+            // Start game on Enter or Space
+            if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE)) {
+                // Initialize the game
+                InitGame(&maze, &walls, &wallCount, &playerPos, &yaw, &pitch, &gameState,
+                         &torches, &torchCount, &particleSystems, scaryChars, SCARY_CHAR_COUNT, &gameTimer);
+                gameState = GAME_STATE_PLAYING;
+                gameInitialized = true;
+                mouseCaptured = true;
+                DisableCursor();
+            }
+        }
+        
+        // Toggle the mouse capture (only in playing state)
+        if (gameState == GAME_STATE_PLAYING && IsKeyPressed(KEY_F)) {
             mouseCaptured = !mouseCaptured;
             if (mouseCaptured) DisableCursor();
             else EnableCursor();
         }
         
-        // Restart the game
-        if (IsKeyPressed(KEY_R)) {
+        // Restart the game (only when game is initialized)
+        if (gameInitialized && IsKeyPressed(KEY_R) && 
+            (gameState == GAME_STATE_WON || gameState == GAME_STATE_GAMEOVER)) {
             InitGame(&maze, &walls, &wallCount, &playerPos, &yaw, &pitch, &gameState,
                      &torches, &torchCount, &particleSystems, scaryChars, SCARY_CHAR_COUNT, &gameTimer);
+            gameState = GAME_STATE_PLAYING;
+            mouseCaptured = true;
+            DisableCursor();
         }
-        // timer update
-        if (gameState == GAME_STATE_PLAYING) {
+        // timer update (only when game is initialized)
+        if (gameInitialized && gameState == GAME_STATE_PLAYING) {
             gameTimer += dt;
         }
 
-        if (torches && torchCount > 0) {
+        if (gameInitialized && torches && torchCount > 0) {
             Torches_Update(torches, torchCount, dt);
             
             // Update particle systems
@@ -470,8 +489,8 @@ int main(void) {
             }
         }
         
-        // mouse look
-        if (mouseCaptured && gameState == GAME_STATE_PLAYING) {
+        // mouse look (only when game is initialized and playing)
+        if (gameInitialized && mouseCaptured && gameState == GAME_STATE_PLAYING) {
             Vector2 md = GetMouseDelta();
             yaw -= md.x * MOUSE_SENS;
             pitch -= md.y * MOUSE_SENS;
@@ -487,8 +506,8 @@ int main(void) {
         };
         Vector3 right = (Vector3){cosf(yaw), 0.0f, -sinf(yaw)};
         
-        // player movement input
-        if (gameState == GAME_STATE_PLAYING) {
+        // player movement input (only when game is initialized)
+        if (gameInitialized && gameState == GAME_STATE_PLAYING) {
             float speed = MOVE_SPEED * (IsKeyDown(KEY_LEFT_SHIFT) ? RUN_MULTIPLIER : 1.0f);
             Vector2 wish = (Vector2){0.0f, 0.0f};
             
@@ -626,18 +645,71 @@ int main(void) {
         }
 
         // update the camera
-        cam.position = (Vector3){playerPos.x, playerPos.y + PLAYER_EYE_HEIGHT, playerPos.z};
-        cam.target = (Vector3){
-            cam.position.x + forward.x,
-            cam.position.y + forward.y,
-            cam.position.z + forward.z
-        };
+        if (gameInitialized) {
+            cam.position = (Vector3){playerPos.x, playerPos.y + PLAYER_EYE_HEIGHT, playerPos.z};
+            cam.target = (Vector3){
+                cam.position.x + forward.x,
+                cam.position.y + forward.y,
+                cam.position.z + forward.z
+            };
+        }
         
         // start drawing
         BeginDrawing();
         ClearBackground((Color){5, 5, 8, 255});
         
-        BeginMode3D(cam);
+        // Render menu or game
+        if (gameState == GAME_STATE_MENU) {
+            int screenWidth = GetScreenWidth();
+            int screenHeight = GetScreenHeight();
+            
+            DrawRectangle(0, 0, screenWidth, screenHeight, (Color){0, 0, 0, 240});
+
+            const char* titleText = "3D MAZE HORROR";
+            int titleSize = 72;
+            int titleWidth = MeasureText(titleText, titleSize);
+            
+            // Title shadow
+            DrawText(titleText, (screenWidth - titleWidth) / 2 + 4, screenHeight / 2 - 200 + 4, titleSize, (Color){40, 0, 0, 255});
+            // Title glow
+            DrawText(titleText, (screenWidth - titleWidth) / 2, screenHeight / 2 - 200, titleSize, (Color){180, 0, 0, 255});
+            
+            // Subtitle
+            const char* subtitleText = "Escape the darkness...";
+            int subtitleSize = 28;
+            int subtitleWidth = MeasureText(subtitleText, subtitleSize);
+            DrawText(subtitleText, (screenWidth - subtitleWidth) / 2, screenHeight / 2 - 120, subtitleSize, (Color){150, 150, 150, 255});
+            
+            // Start game instruction with blinking effect
+            float time = GetTime();
+            bool showPrompt = ((int)(time * 2)) % 2 == 0; // Blinking each 0.5 seconds
+            
+            if (showPrompt) {
+                const char* startText = "Press ENTER or SPACE to Start";
+                int startSize = 32;
+                int startWidth = MeasureText(startText, startSize);
+                DrawText(startText, (screenWidth - startWidth) / 2, screenHeight / 2 + 40, startSize, (Color){220, 220, 220, 255});
+            }
+            
+            // Controls
+            const char* controlsText = "Controls: WASD - Move | Shift - Run | Space - Jump | F - Toggle Mouse | ESC - Quit";
+            int controlsSize = 18;
+            int controlsWidth = MeasureText(controlsText, controlsSize);
+            DrawText(controlsText, (screenWidth - controlsWidth) / 2, screenHeight - 80, controlsSize, (Color){120, 120, 120, 255});
+            
+            // Best record display (if exists)
+            if (bestRecord >= 0.0f) {
+                char bestText[128];
+                int bestMinutes = (int)(bestRecord / 60.0f);
+                int bestSeconds = (int)bestRecord % 60;
+                int bestMilliseconds = (int)((bestRecord - (int)bestRecord) * 100.0f);
+                snprintf(bestText, sizeof(bestText), "Best Time: %02d:%02d.%02d", bestMinutes, bestSeconds, bestMilliseconds);
+                int bestSize = 24;
+                int bestWidth = MeasureText(bestText, bestSize);
+                DrawText(bestText, (screenWidth - bestWidth) / 2, screenHeight / 2 + 100, bestSize, (Color){200, 150, 0, 255});
+            }
+        } else if (gameInitialized) {
+            BeginMode3D(cam);
 
         // render the maze with textures
         if (maze) {
@@ -700,17 +772,18 @@ int main(void) {
             }
         }
         
-        EndMode3D();
+            EndMode3D();
+        }
         
         // draw the crosshair
-        if (gameState == GAME_STATE_PLAYING) {
+        if (gameInitialized && gameState == GAME_STATE_PLAYING) {
             int cx = GetScreenWidth() / 2, cy = GetScreenHeight() / 2;
             DrawLine(cx - 8, cy, cx + 8, cy, RAYWHITE);
             DrawLine(cx, cy - 8, cx, cy + 8, RAYWHITE);
         }
         
         // draw the HUD
-        if (gameState == GAME_STATE_PLAYING) {
+        if (gameInitialized && gameState == GAME_STATE_PLAYING) {
             DrawText("WASD: move | Shift: run | Space: jump | F: toggle mouse | R: restart | Esc: quit",
                      20, 20, 18, RAYWHITE);
             
@@ -721,7 +794,10 @@ int main(void) {
             int milliseconds = (int)((gameTimer - (int)gameTimer) * 100.0f);
             snprintf(timerText, sizeof(timerText), "Time: %02d:%02d.%02d", minutes, seconds, milliseconds);
             DrawText(timerText, 20, 50, 24, YELLOW);
-        } else if (gameState == GAME_STATE_WON) {
+        }
+        
+        // Win and game over screens (only when game is initialized)
+        if (gameInitialized && gameState == GAME_STATE_WON) {
             // Win screen
             int screenWidth = GetScreenWidth();
             int screenHeight = GetScreenHeight();
@@ -764,7 +840,7 @@ int main(void) {
             fontSize = 24;
             textWidth = MeasureText(restartText, fontSize);
             DrawText(restartText, (screenWidth - textWidth) / 2, screenHeight / 2 + 60, fontSize, RAYWHITE);
-        } else if (gameState == GAME_STATE_GAMEOVER) {
+        } else if (gameInitialized && gameState == GAME_STATE_GAMEOVER) {
             // Game over screen
             int screenWidth = GetScreenWidth();
             int screenHeight = GetScreenHeight();
