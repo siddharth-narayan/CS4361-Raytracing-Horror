@@ -143,6 +143,18 @@ GameAssets* Assets_Load(void) {
         TraceLog(LOG_WARNING, "Failed to load footstep.mp3 - continuing without footstep sounds");
     }
     
+    // Load battery pickup sound (try assets directory first, then current directory)
+    assets->batteryPickupSound = LoadSound("assets/battery.mp3");
+    if (assets->batteryPickupSound.frameCount == 0) {
+        assets->batteryPickupSound = LoadSound("battery.mp3");
+    }
+    
+    if (assets->batteryPickupSound.frameCount > 0) {
+        TraceLog(LOG_INFO, "Battery pickup sound loaded successfully");
+    } else {
+        TraceLog(LOG_WARNING, "Failed to load battery.mp3 - continuing without battery pickup sound");
+    }
+    
     assets->loaded = true;
     
     return assets;
@@ -165,6 +177,10 @@ void Assets_Unload(GameAssets* assets) {
     
     if (assets->footstepSound.frameCount > 0) {
         UnloadSound(assets->footstepSound);
+    }
+    
+    if (assets->batteryPickupSound.frameCount > 0) {
+        UnloadSound(assets->batteryPickupSound);
     }
     
     assets->loaded = false;
@@ -400,5 +416,136 @@ void Lighting_UpdateTorchLights(const Torch* torches, int count, float time) {
     (void)torches;
     (void)count;
     (void)time;
+}
+
+// Generate battery pickups in the maze
+int Batteries_Generate(const Maze* maze, BatteryPickup** outBatteries, int maxBatteries) {
+    if (!maze || !outBatteries || maxBatteries <= 0) return 0;
+    
+    *outBatteries = (BatteryPickup*)malloc(maxBatteries * sizeof(BatteryPickup));
+    if (!*outBatteries) return 0;
+    
+    int count = 0;
+    const float batteryHeight = 0.8f; // Height above ground
+    const float batteryPlacementChance = 0.12f; // 12% chance per cell
+    
+    // Place batteries randomly in open cells (not on walls, not at start/exit)
+    for (int y = 0; y < maze->height && count < maxBatteries; y++) {
+        for (int x = 0; x < maze->width && count < maxBatteries; x++) {
+            // Skip start and exit positions
+            bool isStart = (x == (int)maze->startPos.x && y == (int)maze->startPos.y);
+            bool isExit = (x == (int)maze->exitPos.x && y == (int)maze->exitPos.y);
+            
+            if (isStart || isExit) continue;
+            
+            // Random chance to place a battery in this cell
+            if ((float)rand() / (float)RAND_MAX < batteryPlacementChance) {
+                Vector2 worldPos = Maze_CellToWorld(maze, x, y);
+                
+                // Add some random offset within the cell for variety
+                float offsetX = ((float)(rand() % 100) / 100.0f - 0.5f) * maze->cellSize * 0.6f;
+                float offsetZ = ((float)(rand() % 100) / 100.0f - 0.5f) * maze->cellSize * 0.6f;
+                
+                (*outBatteries)[count].position = (Vector3){
+                    worldPos.x + offsetX,
+                    batteryHeight,
+                    worldPos.y + offsetZ
+                };
+                (*outBatteries)[count].collected = false;
+                (*outBatteries)[count].bobTime = (float)(rand() % 1000) / 1000.0f * 6.28f; // Random starting phase
+                (*outBatteries)[count].rotation = (float)(rand() % 360) * DEG2RAD;
+                
+                count++;
+            }
+        }
+    }
+    
+    return count;
+}
+
+// Update battery animations
+void Batteries_Update(BatteryPickup* batteries, int count, float dt) {
+    if (!batteries) return;
+    
+    for (int i = 0; i < count; i++) {
+        if (!batteries[i].collected) {
+            // Bob up and down
+            batteries[i].bobTime += dt * 2.0f; // Animation speed
+            if (batteries[i].bobTime > 6.28f) {
+                batteries[i].bobTime -= 6.28f;
+            }
+            
+            // Rotate slowly
+            batteries[i].rotation += dt * 1.5f;
+            if (batteries[i].rotation > 6.28f) {
+                batteries[i].rotation -= 6.28f;
+            }
+        }
+    }
+}
+
+// Render battery pickups with visual effects
+void Batteries_Render(const BatteryPickup* batteries, int count, float globalTime) {
+    if (!batteries) return;
+    
+    for (int i = 0; i < count; i++) {
+        if (batteries[i].collected) continue;
+        
+        Vector3 pos = batteries[i].position;
+        
+        // Bob animation (vertical movement)
+        float bobOffset = sinf(batteries[i].bobTime) * 0.15f;
+        pos.y = batteries[i].position.y + bobOffset;
+        
+        // Battery size
+        float batterySize = 0.25f;
+        
+        // Main battery body (green/yellow glowing cube)
+        Color batteryColor = (Color){100, 255, 100, 255}; // Bright green
+        DrawCube(pos, batterySize * 0.6f, batterySize * 1.2f, batterySize * 0.4f, batteryColor);
+        
+        // Battery terminals (top and bottom)
+        Color terminalColor = (Color){150, 255, 150, 255};
+        Vector3 topTerminal = pos;
+        topTerminal.y += batterySize * 0.6f;
+        DrawCube(topTerminal, batterySize * 0.5f, batterySize * 0.2f, batterySize * 0.3f, terminalColor);
+        
+        Vector3 bottomTerminal = pos;
+        bottomTerminal.y -= batterySize * 0.6f;
+        DrawCube(bottomTerminal, batterySize * 0.5f, batterySize * 0.2f, batterySize * 0.3f, terminalColor);
+        
+        // Glowing effect (pulsing sphere around battery)
+        float pulse = 0.7f + 0.3f * sinf(globalTime * 3.0f + i);
+        float glowSize = batterySize * 1.5f * pulse;
+        Color glowColor = (Color){
+            (unsigned char)(100 * pulse),
+            (unsigned char)(255 * pulse),
+            (unsigned char)(100 * pulse),
+            (unsigned char)(80 * pulse)
+        };
+        DrawSphere(pos, glowSize, glowColor);
+        
+        // Light pool on the floor (similar to torches but smaller)
+        Vector3 floorLightPos = (Vector3){pos.x, 0.05f, pos.z};
+        float poolRadius = 0.6f * pulse;
+        float poolAlpha = 0.3f * pulse;
+        Color poolColor = (Color){
+            (unsigned char)(100 * pulse),
+            (unsigned char)(255 * pulse),
+            (unsigned char)(100 * pulse),
+            (unsigned char)(poolAlpha * 255)
+        };
+        
+        // Draw light pool as concentric circles
+        for (int layer = 0; layer < 3; layer++) {
+            float layerRadius = poolRadius * (1.0f - layer * 0.33f);
+            float layerAlpha = poolAlpha * (1.0f - layer * 0.4f);
+            if (layerRadius > 0.1f) {
+                Color layerColor = poolColor;
+                layerColor.a = (unsigned char)(layerAlpha * 255);
+                DrawPlane(floorLightPos, (Vector2){layerRadius * 2.0f, layerRadius * 2.0f}, layerColor);
+            }
+        }
+    }
 }
 

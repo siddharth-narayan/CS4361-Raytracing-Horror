@@ -104,7 +104,8 @@ static void SaveBestRecord(float time) {
 static void InitGame(Maze** maze, WallRect** walls, int* wallCount, Vector3* playerPos, 
                      float* yaw, float* pitch, GameState* gameState,
                      Torch** torches, int* torchCount, ParticleSystem*** particleSystems,
-                     ScaryCharacter* scaryChars, int scaryCharCount, float* gameTimer) {
+                     ScaryCharacter* scaryChars, int scaryCharCount, float* gameTimer,
+                     BatteryPickup** batteries, int* batteryCount) {
     // Free old maze if it exists
     if (*maze) {
         Maze_Destroy(*maze);
@@ -126,6 +127,10 @@ static void InitGame(Maze** maze, WallRect** walls, int* wallCount, Vector3* pla
         }
         free(*particleSystems);
         *particleSystems = NULL;
+    }
+    if (*batteries) {
+        free(*batteries);
+        *batteries = NULL;
     }
     
     // Create and generate a new maze
@@ -160,6 +165,10 @@ static void InitGame(Maze** maze, WallRect** walls, int* wallCount, Vector3* pla
             }
         }
     }
+    
+    // Generate battery pickups
+    int maxBatteries = 15;
+    *batteryCount = Batteries_Generate(*maze, batteries, maxBatteries);
     
     // Reset player to the start position
     Vector2 startWorld = Maze_CellToWorld(*maze, (int)(*maze)->startPos.x, (int)(*maze)->startPos.y);
@@ -568,6 +577,10 @@ int main(void) {
     int torchCount = 0;
     ParticleSystem** particleSystems = NULL;
     
+    // Set up battery pickups
+    BatteryPickup* batteries = NULL;
+    int batteryCount = 0;
+    
     // Set up the scary characters
     ScaryCharacter scaryChars[SCARY_CHAR_COUNT] = {0};
     
@@ -582,7 +595,8 @@ int main(void) {
     bool flashlightOn = false;
     float flashlightBattery = 100.0f;  // Battery level (0-100)
     const float FLASHLIGHT_MAX_BATTERY = 100.0f;
-    const float FLASHLIGHT_DRAIN_RATE = 2.0f;  // Battery drain per second when on (50 seconds total)
+    const float FLASHLIGHT_DRAIN_RATE = 5.0f;  // Battery drain per second when on (20 seconds total)
+    const float BATTERY_RECHARGE_AMOUNT = 30.0f;   // How much each battery pickup recharges
     
     // Footstep tracking
     float footstepTimer = 0.0f;
@@ -610,7 +624,8 @@ int main(void) {
             if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE)) {
                 // Initialize the game
                 InitGame(&maze, &walls, &wallCount, &playerPos, &yaw, &pitch, &gameState,
-                         &torches, &torchCount, &particleSystems, scaryChars, SCARY_CHAR_COUNT, &gameTimer);
+                         &torches, &torchCount, &particleSystems, scaryChars, SCARY_CHAR_COUNT, &gameTimer,
+                         &batteries, &batteryCount);
                 gameState = GAME_STATE_PLAYING;
                 gameInitialized = true;
                 mouseCaptured = true;
@@ -665,7 +680,8 @@ int main(void) {
             }
             
             InitGame(&maze, &walls, &wallCount, &playerPos, &yaw, &pitch, &gameState,
-                     &torches, &torchCount, &particleSystems, scaryChars, SCARY_CHAR_COUNT, &gameTimer);
+                     &torches, &torchCount, &particleSystems, scaryChars, SCARY_CHAR_COUNT, &gameTimer,
+                     &batteries, &batteryCount);
             gameState = GAME_STATE_PLAYING;
             mouseCaptured = true;
             DisableCursor();
@@ -710,6 +726,11 @@ int main(void) {
                     }
                 }
             }
+        }
+        
+        // Update battery pickups
+        if (gameInitialized && batteries && batteryCount > 0) {
+            Batteries_Update(batteries, batteryCount, dt);
         }
         
         // mouse look (only when game is initialized and playing)
@@ -885,6 +906,35 @@ int main(void) {
                         }
                         gameState = GAME_STATE_GAMEOVER;
                         break;
+                    }
+                }
+            }
+            
+            // Check for battery pickup collisions
+            if (batteries && batteryCount > 0) {
+                Vector2 playerPos2D = (Vector2){playerPos.x, playerPos.z};
+                const float BATTERY_PICKUP_RADIUS = 0.8f; // Pickup radius
+                
+                for (int i = 0; i < batteryCount; i++) {
+                    if (!batteries[i].collected) {
+                        Vector2 batteryPos2D = (Vector2){batteries[i].position.x, batteries[i].position.z};
+                        
+                        // Check if player is close enough to collect
+                        if (CircleCircleIntersect(playerPos2D, PLAYER_RADIUS, batteryPos2D, BATTERY_PICKUP_RADIUS)) {
+                            // Collect the battery
+                            batteries[i].collected = true;
+                            
+                            // Recharge flashlight (clamp to max)
+                            flashlightBattery += BATTERY_RECHARGE_AMOUNT;
+                            if (flashlightBattery > FLASHLIGHT_MAX_BATTERY) {
+                                flashlightBattery = FLASHLIGHT_MAX_BATTERY;
+                            }
+                            
+                            // Play pickup sound
+                            if (assets && assets->batteryPickupSound.frameCount > 0) {
+                                PlaySound(assets->batteryPickupSound);
+                            }
+                        }
                     }
                 }
             }
@@ -1104,6 +1154,12 @@ int main(void) {
             }
         }
         
+        // Render battery pickups
+        if (gameInitialized && batteries && batteryCount > 0) {
+            float globalTime = GetTime();
+            Batteries_Render(batteries, batteryCount, globalTime);
+        }
+        
         // render the scary characters (dark, menacing figures)
         if (gameState == GAME_STATE_PLAYING || gameState == GAME_STATE_GAMEOVER) {
             float globalTime = GetTime();
@@ -1285,6 +1341,7 @@ int main(void) {
     if (maze) Maze_Destroy(maze);
     if (walls) free(walls);
     if (torches) free(torches);
+    if (batteries) free(batteries);
     if (particleSystems) {
         for (int i = 0; i < torchCount; i++) {
             if (particleSystems[i]) {
