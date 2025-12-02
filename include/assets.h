@@ -11,6 +11,7 @@ typedef struct {
     Texture2D ceilingTexture;
     Music horrorMusic;
     Sound jumpScareSound;
+    Sound footstepSound;
     bool loaded;
 } GameAssets;
 

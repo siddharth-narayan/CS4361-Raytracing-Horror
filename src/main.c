@@ -537,6 +537,12 @@ int main(void) {
     // Menu state variables
     bool gameInitialized = false;
     
+    // Footstep tracking
+    float footstepTimer = 0.0f;
+    Vector2 lastPlayerPos2D = {0.0f, 0.0f};
+    const float FOOTSTEP_INTERVAL_WALK = 0.5f;  // Time between footsteps when walking
+    const float FOOTSTEP_INTERVAL_RUN = 0.3f;   // Time between footsteps when running
+    
         // Start the main game loop
     while (!WindowShouldClose()) {
         float dt = GetFrameTime();
@@ -562,6 +568,10 @@ int main(void) {
                 gameInitialized = true;
                 mouseCaptured = true;
                 DisableCursor();
+                
+                // Reset footstep tracking
+                footstepTimer = 0.0f;
+                lastPlayerPos2D = (Vector2){playerPos.x, playerPos.z};
                 
                 // Start playing horror music when game starts
                 if (assets && assets->horrorMusic.frameCount > 0) {
@@ -595,6 +605,10 @@ int main(void) {
             gameState = GAME_STATE_PLAYING;
             mouseCaptured = true;
             DisableCursor();
+            
+            // Reset footstep tracking
+            footstepTimer = 0.0f;
+            lastPlayerPos2D = (Vector2){playerPos.x, playerPos.z};
             
             // Restart music
             if (assets && assets->horrorMusic.frameCount > 0) {
@@ -683,6 +697,37 @@ int main(void) {
             playerPos.z = pXZ.y;
 
             onGround = (playerPos.y <= 0.0001f);
+            
+            // Handle footstep sounds - only when WASD keys are pressed
+            bool isPressingWASD = (IsKeyDown(KEY_W) || IsKeyDown(KEY_S) || IsKeyDown(KEY_A) || IsKeyDown(KEY_D));
+            bool isMoving = (len > 0.0001f);
+            
+            if (isPressingWASD && isMoving && onGround && assets && assets->footstepSound.frameCount > 0) {
+                // Determine footstep interval based on speed (walking vs running)
+                float footstepInterval = (speed > MOVE_SPEED * 1.5f) ? FOOTSTEP_INTERVAL_RUN : FOOTSTEP_INTERVAL_WALK;
+                
+                // Update footstep timer
+                footstepTimer += dt;
+                
+                // Play footstep sound at intervals
+                if (footstepTimer >= footstepInterval) {
+                    PlaySound(assets->footstepSound);
+                    footstepTimer = 0.0f;
+                }
+                
+                // Update last position
+                lastPlayerPos2D = pXZ;
+            } else {
+                // Stop footstep sound if currently playing when player stops or releases keys
+                if (assets && assets->footstepSound.frameCount > 0 && IsSoundPlaying(assets->footstepSound)) {
+                    StopSound(assets->footstepSound);
+                }
+                
+                // Reset timer when not moving or keys released
+                footstepTimer = 0.0f;
+                lastPlayerPos2D = pXZ;
+            }
+            
             if (onGround) {
                 playerPos.y = 0.0f;
                 playerVelY = 0.0f;

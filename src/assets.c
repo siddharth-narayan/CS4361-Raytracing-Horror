@@ -131,6 +131,18 @@ GameAssets* Assets_Load(void) {
         TraceLog(LOG_WARNING, "Failed to load jump.mp3 - continuing without jumpscare sound");
     }
     
+    // Load footstep sound
+    assets->footstepSound = LoadSound("assets/footstep.mp3");
+    if (assets->footstepSound.frameCount == 0) {
+        assets->footstepSound = LoadSound("footstep.mp3");
+    }
+    
+    if (assets->footstepSound.frameCount > 0) {
+        TraceLog(LOG_INFO, "Footstep sound loaded successfully");
+    } else {
+        TraceLog(LOG_WARNING, "Failed to load footstep.mp3 - continuing without footstep sounds");
+    }
+    
     assets->loaded = true;
     
     return assets;
@@ -149,6 +161,10 @@ void Assets_Unload(GameAssets* assets) {
     
     if (assets->jumpScareSound.frameCount > 0) {
         UnloadSound(assets->jumpScareSound);
+    }
+    
+    if (assets->footstepSound.frameCount > 0) {
+        UnloadSound(assets->footstepSound);
     }
     
     assets->loaded = false;
