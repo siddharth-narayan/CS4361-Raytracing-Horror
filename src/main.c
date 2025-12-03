@@ -35,6 +35,11 @@
 #define WEAPON_ATTACK_COOLDOWN 0.6f  // Attack cooldown in seconds
 #define WEAPON_KNIFE_DAMAGE   1.0f   // Knife damage per hit (one-hit kill)
 
+#define BULLET_SPEED         40.0f   // Bullet travel speed
+#define BULLET_MAX_DISTANCE  15.0f   // Maximum distance before bullet disappears
+#define BULLET_RADIUS        0.05f   // Bullet collision radius
+#define MAX_BULLETS          20      // Maximum active bullets at once
+
 #define BEST_RECORD_FILE     "best_record.txt"
 
 // Game state
@@ -79,6 +84,23 @@ typedef struct {
     float bobTime;          // Bobbing animation
     float rotation;         // Rotation animation
 } WeaponPickup;
+
+// Bullet structure
+typedef struct {
+    Vector3 position;       // Current position
+    Vector3 direction;      // Normalized direction vector
+    Vector3 startPosition;  // Starting position
+    float distance;         // Distance traveled
+    bool active;            // Whether bullet is active
+    float life;             // Life timer for fade effect
+} Bullet;
+
+// Bullet system to manage active bullets
+typedef struct {
+    Bullet* bullets;        // Array of bullets
+    int maxBullets;         // Maximum bullets
+    int activeCount;        // Number of active bullets
+} BulletSystem;
 
 // Dust particle for flashlight beam volumetric effect
 typedef struct {
@@ -228,6 +250,201 @@ static void Weapons_Render(const WeaponPickup* weapons, int count, float globalT
             (unsigned char)(80 * pulse)
         };
         DrawSphere(pos, weaponSize * 1.2f * pulse, glowColor);
+    }
+}
+
+// Bullet System Functions
+
+// Forward declaration
+static bool CollidesAny(Vector2 c, float r, const WallRect* walls, int count);
+
+// Create bullet system
+static BulletSystem* BulletSystem_Create(int maxBullets) {
+    BulletSystem* bs = (BulletSystem*)malloc(sizeof(BulletSystem));
+    if (!bs) return NULL;
+    
+    bs->bullets = (Bullet*)malloc(maxBullets * sizeof(Bullet));
+    if (!bs->bullets) {
+        free(bs);
+        return NULL;
+    }
+    
+    bs->maxBullets = maxBullets;
+    bs->activeCount = 0;
+    
+    // Initialize all bullets as inactive
+    for (int i = 0; i < maxBullets; i++) {
+        bs->bullets[i].active = false;
+    }
+    
+    return bs;
+}
+
+// Destroy bullet system
+static void BulletSystem_Destroy(BulletSystem* bs) {
+    if (!bs) return;
+    if (bs->bullets) free(bs->bullets);
+    free(bs);
+}
+
+// Clear all active bullets (useful when restarting game)
+static void BulletSystem_Clear(BulletSystem* bs) {
+    if (!bs || !bs->bullets) return;
+    
+    for (int i = 0; i < bs->maxBullets; i++) {
+        bs->bullets[i].active = false;
+    }
+    bs->activeCount = 0;
+}
+
+// Spawn a new bullet
+static bool BulletSystem_SpawnBullet(BulletSystem* bs, Vector3 position, Vector3 direction) {
+    if (!bs || !bs->bullets) return false;
+    
+    // Find inactive bullet slot
+    for (int i = 0; i < bs->maxBullets; i++) {
+        if (!bs->bullets[i].active) {
+            bs->bullets[i].position = position;
+            bs->bullets[i].startPosition = position;
+            bs->bullets[i].direction = direction;
+            bs->bullets[i].distance = 0.0f;
+            bs->bullets[i].active = true;
+            bs->bullets[i].life = 1.0f;
+            bs->activeCount++;
+            return true;
+        }
+    }
+    
+    return false; // No available slots
+}
+
+// Update bullets (movement, collision, removal)
+static void BulletSystem_Update(BulletSystem* bs, float dt, const WallRect* walls, int wallCount,
+                                ScaryCharacter* enemies, int enemyCount) {
+    if (!bs || !bs->bullets) return;
+    
+    float moveDistance = BULLET_SPEED * dt;
+    
+    for (int i = 0; i < bs->maxBullets; i++) {
+        if (!bs->bullets[i].active) continue;
+        
+        Bullet* bullet = &bs->bullets[i];
+        
+        // Move bullet forward
+        bullet->position.x += bullet->direction.x * moveDistance;
+        bullet->position.y += bullet->direction.y * moveDistance;
+        bullet->position.z += bullet->direction.z * moveDistance;
+        
+        // Update distance traveled
+        float dx = bullet->position.x - bullet->startPosition.x;
+        float dy = bullet->position.y - bullet->startPosition.y;
+        float dz = bullet->position.z - bullet->startPosition.z;
+        bullet->distance = sqrtf(dx*dx + dy*dy + dz*dz);
+        
+        // Check if bullet exceeded max distance
+        if (bullet->distance > BULLET_MAX_DISTANCE) {
+            bullet->active = false;
+            bs->activeCount--;
+            continue;
+        }
+        
+        // Check wall collision
+        bool hitWall = false;
+        Vector2 bulletPos2D = (Vector2){bullet->position.x, bullet->position.z};
+        if (CollidesAny(bulletPos2D, BULLET_RADIUS, walls, wallCount)) {
+            hitWall = true;
+        }
+        
+        // Check enemy collision
+        bool hitEnemy = false;
+        for (int j = 0; j < enemyCount; j++) {
+            if (enemies[j].isDead) continue;
+            
+            float dx_enemy = bullet->position.x - enemies[j].position.x;
+            float dy_enemy = bullet->position.y - enemies[j].position.y;
+            float dz_enemy = bullet->position.z - enemies[j].position.z;
+            float dist2D = sqrtf(dx_enemy*dx_enemy + dz_enemy*dz_enemy);
+            
+            // Check if bullet is at enemy height and within radius
+            if (bullet->position.y >= enemies[j].position.y && 
+                bullet->position.y <= enemies[j].position.y + enemies[j].height &&
+                dist2D <= enemies[j].radius + BULLET_RADIUS) {
+                // Hit enemy!
+                enemies[j].health = 0.0f;
+                enemies[j].isDead = true;
+                hitEnemy = true;
+                break;
+            }
+        }
+        
+        // Remove bullet if it hit something or went too far
+        if (hitWall || hitEnemy || bullet->position.y < -1.0f || bullet->position.y > WALL_HEIGHT + 1.0f) {
+            bullet->active = false;
+            bs->activeCount--;
+        }
+    }
+}
+
+// Render bullets with fire/trail effects
+static void BulletSystem_Render(BulletSystem* bs, float globalTime) {
+    (void)globalTime; // May be used for animation effects in the future
+    if (!bs || !bs->bullets) return;
+    
+    for (int i = 0; i < bs->maxBullets; i++) {
+        if (!bs->bullets[i].active) continue;
+        
+        Bullet* bullet = &bs->bullets[i];
+        
+        // Bullet core (bright orange/yellow)
+        Color coreColor = (Color){255, 200, 0, 255};
+        DrawSphere(bullet->position, 0.08f, coreColor);
+        
+        // Fire trail effect - draw particles along the trail
+        Vector3 trailStart = bullet->startPosition;
+        Vector3 trailDir = (Vector3){
+            bullet->position.x - trailStart.x,
+            bullet->position.y - trailStart.y,
+            bullet->position.z - trailStart.z
+        };
+        
+        float trailLength = bullet->distance;
+        int trailSegments = (int)(trailLength * 3.0f) + 1;
+        if (trailSegments > 15) trailSegments = 15; // Limit segments
+        
+        for (int seg = 0; seg < trailSegments; seg++) {
+            float t = (float)seg / (float)trailSegments;
+            Vector3 trailPos = (Vector3){
+                trailStart.x + trailDir.x * t,
+                trailStart.y + trailDir.y * t,
+                trailStart.z + trailDir.z * t
+            };
+            
+            // Fade trail from bright to dim
+            float alpha = 1.0f - t;
+            float size = 0.05f * (1.0f - t * 0.5f);
+            
+            // Fire colors (orange to red)
+            Color trailColor = (Color){
+                (unsigned char)(255 * alpha),
+                (unsigned char)(100 * alpha),
+                0,
+                (unsigned char)(200 * alpha)
+            };
+            
+            DrawSphere(trailPos, size, trailColor);
+        }
+        
+        // Bright muzzle flash effect at start position (fading)
+        float flashAlpha = 1.0f - (bullet->distance / BULLET_MAX_DISTANCE);
+        if (flashAlpha > 0.1f && bullet->distance < 0.5f) {
+            Color flashColor = (Color){
+                255,
+                255,
+                200,
+                (unsigned char)(150 * flashAlpha)
+            };
+            DrawSphere(bullet->startPosition, 0.15f * flashAlpha, flashColor);
+        }
     }
 }
 
@@ -975,6 +1192,12 @@ int main(void) {
     WeaponPickup* weapons = NULL;
     int weaponCount = 0;
     
+    // Set up bullet system
+    BulletSystem* bulletSystem = BulletSystem_Create(MAX_BULLETS);
+    if (!bulletSystem) {
+        TraceLog(LOG_WARNING, "Failed to create bullet system!");
+    }
+    
     // Player weapon state
     Weapon playerWeapon = {0};
     playerWeapon.type = WEAPON_NONE;
@@ -1096,6 +1319,11 @@ int main(void) {
                 StopSound(assets->victorySound);
             }
             
+            // Clear all bullets when restarting
+            if (bulletSystem) {
+                BulletSystem_Clear(bulletSystem);
+            }
+            
             InitGame(&maze, &walls, &wallCount, &playerPos, &yaw, &pitch, &gameState,
                      &torches, &torchCount, &particleSystems, scaryChars, SCARY_CHAR_COUNT, &gameTimer,
                      &batteries, &batteryCount, &weapons, &weaponCount);
@@ -1159,6 +1387,11 @@ int main(void) {
         // Update weapon pickups
         if (gameInitialized && weapons && weaponCount > 0) {
             Weapons_Update(weapons, weaponCount, dt);
+        }
+        
+        // Update bullets
+        if (gameInitialized && bulletSystem && gameState == GAME_STATE_PLAYING) {
+            BulletSystem_Update(bulletSystem, dt, walls, wallCount, scaryChars, SCARY_CHAR_COUNT);
         }
         
         // Update attack cooldown
@@ -1305,22 +1538,14 @@ int main(void) {
                     PlaySound(assets->bulletSound);
                 }
                 
-                // Check for enemy hits (shoot range)
-                Vector2 playerPos2D = (Vector2){playerPos.x, playerPos.z};
-                
-                for (int i = 0; i < SCARY_CHAR_COUNT; i++) {
-                    if (scaryChars[i].isDead) continue;
-                    
-                    Vector2 enemyPos2D = (Vector2){scaryChars[i].position.x, scaryChars[i].position.z};
-                    float dist = sqrtf((playerPos2D.x - enemyPos2D.x) * (playerPos2D.x - enemyPos2D.x) + 
-                                      (playerPos2D.y - enemyPos2D.y) * (playerPos2D.y - enemyPos2D.y));
-                    
-                    // Check if enemy is in shoot range
-                    if (dist <= playerWeapon.attackRange) {
-                        // One-hit kill
-                        scaryChars[i].health = 0.0f;
-                        scaryChars[i].isDead = true;
-                    }
+                // Spawn a bullet from player position in the direction they're looking
+                if (bulletSystem) {
+                    Vector3 bulletStartPos = (Vector3){
+                        playerPos.x,
+                        playerPos.y + PLAYER_EYE_HEIGHT,
+                        playerPos.z
+                    };
+                    BulletSystem_SpawnBullet(bulletSystem, bulletStartPos, forward);
                 }
             }
             
@@ -1680,6 +1905,12 @@ int main(void) {
             Weapons_Render(weapons, weaponCount, globalTime);
         }
         
+        // Render bullets
+        if (gameInitialized && bulletSystem && gameState == GAME_STATE_PLAYING) {
+            float globalTime = GetTime();
+            BulletSystem_Render(bulletSystem, globalTime);
+        }
+        
         // Render flashlight dust particles (volumetric effect)
         if (gameInitialized && flashlightDust && flashlightOn && gameState == GAME_STATE_PLAYING) {
             Vector3 flashlightPos = (Vector3){playerPos.x, playerPos.y + PLAYER_EYE_HEIGHT, playerPos.z};
@@ -1952,6 +2183,7 @@ int main(void) {
     }
     if (assets) Assets_Unload(assets);
     if (flashlightDust) FlashlightDust_Destroy(flashlightDust);
+    if (bulletSystem) BulletSystem_Destroy(bulletSystem);
     if (weapons) free(weapons);
     
     // Cleanup static models
