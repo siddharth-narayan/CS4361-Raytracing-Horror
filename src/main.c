@@ -2054,6 +2054,129 @@ int main(void) {
             DrawLine(cx, cy - 8, cx, cy + 8, RAYWHITE);
         }
         
+        // Draw mini-map
+        if (gameInitialized && gameState == GAME_STATE_PLAYING && maze) {
+            int screenWidth = GetScreenWidth();
+            int screenHeight = GetScreenHeight();
+            int mapSize = 150; // Size of the mini-map
+            int mapX = screenWidth - mapSize - 20; // Top-right corner with margin
+            int mapY = 70; // Position below battery (battery is at y=20, height=40, so starts at y=70)
+            
+            // Draw background
+            DrawRectangle(mapX, mapY, mapSize, mapSize, (Color){20, 20, 20, 200});
+            DrawRectangleLines(mapX, mapY, mapSize, mapSize, WHITE);
+            
+            // Calculate scale to fit maze in map
+            float cellSize = (float)mapSize / (float)(maze->width > maze->height ? maze->width : maze->height);
+            
+            // Draw maze cells
+            for (int y = 0; y < maze->height; y++) {
+                for (int x = 0; x < maze->width; x++) {
+                    int cellX = mapX + (int)(x * cellSize);
+                    int cellY = mapY + (int)(y * cellSize);
+                    int cellW = (int)cellSize;
+                    int cellH = (int)cellSize;
+                    
+                    // Check if cell has walls on all sides (closed cell)
+                    bool hasNorth = Maze_HasWall(maze, x, y, MAZE_NORTH);
+                    bool hasSouth = Maze_HasWall(maze, x, y, MAZE_SOUTH);
+                    bool hasEast = Maze_HasWall(maze, x, y, MAZE_EAST);
+                    bool hasWest = Maze_HasWall(maze, x, y, MAZE_WEST);
+                    
+                    // Draw cell background (darker for walls, lighter for paths)
+                    if (hasNorth && hasSouth && hasEast && hasWest) {
+                        DrawRectangle(cellX, cellY, cellW, cellH, (Color){40, 40, 40, 255});
+                    } else {
+                        DrawRectangle(cellX, cellY, cellW, cellH, (Color){60, 60, 60, 255});
+                    }
+                    
+                    // Draw walls
+                    if (hasNorth) {
+                        DrawLine(cellX, cellY, cellX + cellW, cellY, WHITE);
+                    }
+                    if (hasSouth) {
+                        DrawLine(cellX, cellY + cellH, cellX + cellW, cellY + cellH, WHITE);
+                    }
+                    if (hasEast) {
+                        DrawLine(cellX + cellW, cellY, cellX + cellW, cellY + cellH, WHITE);
+                    }
+                    if (hasWest) {
+                        DrawLine(cellX, cellY, cellX, cellY + cellH, WHITE);
+                    }
+                }
+            }
+            
+            // Draw exit position (green)
+            int exitCellX = (int)maze->exitPos.x;
+            int exitCellY = (int)maze->exitPos.y;
+            int exitX = mapX + (int)(exitCellX * cellSize + cellSize * 0.5f);
+            int exitY = mapY + (int)(exitCellY * cellSize + cellSize * 0.5f);
+            DrawCircle(exitX, exitY, 4, GREEN);
+            
+            // Draw batteries (yellow/orange dots)
+            if (batteries && batteryCount > 0) {
+                for (int i = 0; i < batteryCount; i++) {
+                    if (batteries[i].collected) continue;
+                    
+                    int batteryCellX, batteryCellY;
+                    Maze_WorldToCell(maze, batteries[i].position.x, batteries[i].position.z, &batteryCellX, &batteryCellY);
+                    if (batteryCellX >= 0 && batteryCellX < maze->width && batteryCellY >= 0 && batteryCellY < maze->height) {
+                        int batteryX = mapX + (int)(batteryCellX * cellSize + cellSize * 0.5f);
+                        int batteryY = mapY + (int)(batteryCellY * cellSize + cellSize * 0.5f);
+                        DrawCircle(batteryX, batteryY, 2, YELLOW);
+                    }
+                }
+            }
+            
+            // Draw weapons (gray/white dots)
+            if (weapons && weaponCount > 0) {
+                for (int i = 0; i < weaponCount; i++) {
+                    if (weapons[i].collected) continue;
+                    
+                    int weaponCellX, weaponCellY;
+                    Maze_WorldToCell(maze, weapons[i].position.x, weapons[i].position.z, &weaponCellX, &weaponCellY);
+                    if (weaponCellX >= 0 && weaponCellX < maze->width && weaponCellY >= 0 && weaponCellY < maze->height) {
+                        int weaponX = mapX + (int)(weaponCellX * cellSize + cellSize * 0.5f);
+                        int weaponY = mapY + (int)(weaponCellY * cellSize + cellSize * 0.5f);
+                        DrawCircle(weaponX, weaponY, 2, LIGHTGRAY);
+                    }
+                }
+            }
+            
+            // Draw player position (blue)
+            int playerCellX, playerCellY;
+            Maze_WorldToCell(maze, playerPos.x, playerPos.z, &playerCellX, &playerCellY);
+            if (playerCellX >= 0 && playerCellX < maze->width && playerCellY >= 0 && playerCellY < maze->height) {
+                int playerX = mapX + (int)(playerCellX * cellSize + cellSize * 0.5f);
+                int playerY = mapY + (int)(playerCellY * cellSize + cellSize * 0.5f);
+                DrawCircle(playerX, playerY, 3, BLUE);
+                
+                // Draw direction indicator (small line showing player facing direction)
+                float dirX = cosf(yaw);
+                float dirZ = sinf(yaw);
+                DrawLine(playerX, playerY, 
+                        playerX + (int)(dirX * cellSize * 0.4f), 
+                        playerY + (int)(dirZ * cellSize * 0.4f), 
+                        BLUE);
+            }
+            
+            // Draw enemies (red dots)
+            for (int i = 0; i < SCARY_CHAR_COUNT; i++) {
+                if (scaryChars[i].isDead) continue;
+                
+                int enemyCellX, enemyCellY;
+                Maze_WorldToCell(maze, scaryChars[i].position.x, scaryChars[i].position.z, &enemyCellX, &enemyCellY);
+                if (enemyCellX >= 0 && enemyCellX < maze->width && enemyCellY >= 0 && enemyCellY < maze->height) {
+                    int enemyX = mapX + (int)(enemyCellX * cellSize + cellSize * 0.5f);
+                    int enemyY = mapY + (int)(enemyCellY * cellSize + cellSize * 0.5f);
+                    DrawCircle(enemyX, enemyY, 2, RED);
+                }
+            }
+            
+            // Draw legend
+            DrawText("MAP", mapX, mapY - 18, 14, WHITE);
+        }
+        
         // draw the HUD
         if (gameInitialized && gameState == GAME_STATE_PLAYING) {
             DrawText("WASD: move | Shift: run | Space: jump | F: toggle mouse | T: flashlight | Left/Right Click: shoot | R: restart | Esc: quit",
