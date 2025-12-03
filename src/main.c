@@ -22,11 +22,17 @@
 #define RUN_MULTIPLIER       1.8f
 #define MOUSE_SENS           0.0020f // Radians per pixel
 
-#define SCARY_CHAR_COUNT     3       // Number of scary characters
+#define SCARY_CHAR_COUNT     5       // Number of scary characters
 #define SCARY_CHAR_SPEED     2.8f    // Scary character movement speed
 #define SCARY_CHAR_RADIUS    0.35f   // Collision radius
 #define SCARY_CHAR_HEIGHT    2.2f    // Height of scary character
 #define SCARY_CHAR_RANDOMNESS 0.15f  // Randomness factor in movement
+#define SCARY_CHAR_HEALTH    3.0f    // Enemy health points
+#define SCARY_CHAR_MAX_HEALTH 3.0f   // Maximum enemy health
+
+#define WEAPON_ATTACK_RANGE  1.5f    // Attack range
+#define WEAPON_ATTACK_COOLDOWN 0.6f  // Attack cooldown in seconds
+#define WEAPON_KNIFE_DAMAGE   1.0f   // Knife damage per hit
 
 #define BEST_RECORD_FILE     "best_record.txt"
 
@@ -44,7 +50,36 @@ typedef struct {
     float speed;
     float radius;
     float height;
+    float health;          // Health points (0 = dead)
+    float maxHealth;        // Maximum health
+    bool isDead;            // Death state
 } ScaryCharacter;
+
+// Weapon types
+typedef enum {
+    WEAPON_NONE,
+    WEAPON_KNIFE,
+    WEAPON_CROWBAR,
+    WEAPON_PIPE
+} WeaponType;
+
+// Weapon structure
+typedef struct {
+    WeaponType type;
+    float damage;           // Damage per hit
+    float attackRange;      // Attack range
+    float attackCooldown;   // Time between attacks
+    float durability;      // Weapon durability (0-100)
+} Weapon;
+
+// Weapon pickup structure
+typedef struct {
+    Vector3 position;       // World position
+    WeaponType type;        // Weapon type
+    bool collected;         // Whether collected
+    float bobTime;          // Bobbing animation
+    float rotation;         // Rotation animation
+} WeaponPickup;
 
 // Dust particle for flashlight beam volumetric effect
 typedef struct {
@@ -67,6 +102,162 @@ typedef struct {
 // Helper function: Clamp float value
 static inline float clampf(float v, float lo, float hi) {
     return (v < lo) ? lo : (v > hi) ? hi : v;
+}
+
+// Get weapon stats based on type
+static Weapon GetWeaponStats(WeaponType type) {
+    Weapon weapon = {0};
+    weapon.type = type;
+    
+    switch (type) {
+        case WEAPON_KNIFE:
+            weapon.damage = WEAPON_KNIFE_DAMAGE;
+            weapon.attackRange = WEAPON_ATTACK_RANGE;
+            weapon.attackCooldown = WEAPON_ATTACK_COOLDOWN;
+            weapon.durability = 100.0f;
+            break;
+        case WEAPON_CROWBAR:
+            weapon.damage = 1.5f;
+            weapon.attackRange = 1.8f;
+            weapon.attackCooldown = 0.8f;
+            weapon.durability = 100.0f;
+            break;
+        case WEAPON_PIPE:
+            weapon.damage = 2.0f;
+            weapon.attackRange = 2.0f;
+            weapon.attackCooldown = 1.0f;
+            weapon.durability = 100.0f;
+            break;
+        default:
+            weapon.damage = 0.0f;
+            weapon.attackRange = 0.0f;
+            weapon.attackCooldown = 0.0f;
+            weapon.durability = 0.0f;
+            break;
+    }
+    
+    return weapon;
+}
+
+// Generate weapon pickups in the maze
+static int Weapons_Generate(const Maze* maze, WeaponPickup** outWeapons, int maxWeapons) {
+    if (!maze || !outWeapons || maxWeapons <= 0) return 0;
+    
+    *outWeapons = (WeaponPickup*)malloc(maxWeapons * sizeof(WeaponPickup));
+    if (!*outWeapons) return 0;
+    
+    int count = 0;
+    const float weaponHeight = 0.6f;
+    const float weaponPlacementChance = 0.08f; // 8% chance per cell
+    
+    for (int y = 0; y < maze->height && count < maxWeapons; y++) {
+        for (int x = 0; x < maze->width && count < maxWeapons; x++) {
+            bool isStart = (x == (int)maze->startPos.x && y == (int)maze->startPos.y);
+            bool isExit = (x == (int)maze->exitPos.x && y == (int)maze->exitPos.y);
+            
+            if (isStart || isExit) continue;
+            
+            if ((float)rand() / (float)RAND_MAX < weaponPlacementChance) {
+                Vector2 worldPos = Maze_CellToWorld(maze, x, y);
+                
+                float offsetX = ((float)(rand() % 100) / 100.0f - 0.5f) * maze->cellSize * 0.6f;
+                float offsetZ = ((float)(rand() % 100) / 100.0f - 0.5f) * maze->cellSize * 0.6f;
+                
+                (*outWeapons)[count].position = (Vector3){
+                    worldPos.x + offsetX,
+                    weaponHeight,
+                    worldPos.y + offsetZ
+                };
+                
+                // Random weapon type (mostly knives, some others)
+                int weaponRoll = rand() % 100;
+                if (weaponRoll < 70) {
+                    (*outWeapons)[count].type = WEAPON_KNIFE;
+                } else if (weaponRoll < 90) {
+                    (*outWeapons)[count].type = WEAPON_CROWBAR;
+                } else {
+                    (*outWeapons)[count].type = WEAPON_PIPE;
+                }
+                
+                (*outWeapons)[count].collected = false;
+                (*outWeapons)[count].bobTime = (float)(rand() % 1000) / 1000.0f * 6.28f;
+                (*outWeapons)[count].rotation = (float)(rand() % 360) * DEG2RAD;
+                
+                count++;
+            }
+        }
+    }
+    
+    return count;
+}
+
+// Update weapon pickups
+static void Weapons_Update(WeaponPickup* weapons, int count, float dt) {
+    if (!weapons) return;
+    
+    for (int i = 0; i < count; i++) {
+        if (!weapons[i].collected) {
+            weapons[i].bobTime += dt * 2.0f;
+            if (weapons[i].bobTime > 6.28f) {
+                weapons[i].bobTime -= 6.28f;
+            }
+            
+            weapons[i].rotation += dt * 2.0f;
+            if (weapons[i].rotation > 6.28f) {
+                weapons[i].rotation -= 6.28f;
+            }
+        }
+    }
+}
+
+// Render weapon pickups
+static void Weapons_Render(const WeaponPickup* weapons, int count, float globalTime) {
+    if (!weapons) return;
+    
+    for (int i = 0; i < count; i++) {
+        if (weapons[i].collected) continue;
+        
+        Vector3 pos = weapons[i].position;
+        float bobOffset = sinf(weapons[i].bobTime) * 0.1f;
+        pos.y = weapons[i].position.y + bobOffset;
+        
+        // Render different weapons
+        Color weaponColor;
+        float weaponSize = 0.15f;
+        
+        switch (weapons[i].type) {
+            case WEAPON_KNIFE:
+                weaponColor = (Color){180, 180, 190, 255}; // Silver/gray
+                weaponSize = 0.12f;
+                // Draw knife (small blade)
+                DrawCube(pos, weaponSize * 0.3f, weaponSize * 1.5f, weaponSize * 0.1f, weaponColor);
+                // Handle
+                Vector3 handlePos = pos;
+                handlePos.y -= weaponSize * 0.6f;
+                DrawCube(handlePos, weaponSize * 0.25f, weaponSize * 0.4f, weaponSize * 0.15f, (Color){80, 50, 30, 255});
+                break;
+            case WEAPON_CROWBAR:
+                weaponColor = (Color){100, 100, 110, 255};
+                DrawCube(pos, weaponSize * 0.2f, weaponSize * 2.0f, weaponSize * 0.2f, weaponColor);
+                break;
+            case WEAPON_PIPE:
+                weaponColor = (Color){120, 120, 130, 255};
+                DrawCube(pos, weaponSize * 0.25f, weaponSize * 1.8f, weaponSize * 0.25f, weaponColor);
+                break;
+            default:
+                break;
+        }
+        
+        // Glow effect
+        float pulse = 0.7f + 0.3f * sinf(globalTime * 2.0f + i);
+        Color glowColor = (Color){
+            weaponColor.r,
+            weaponColor.g,
+            weaponColor.b,
+            (unsigned char)(80 * pulse)
+        };
+        DrawSphere(pos, weaponSize * 1.2f * pulse, glowColor);
+    }
 }
 
 // Create flashlight dust particle system
@@ -321,7 +512,8 @@ static void InitGame(Maze** maze, WallRect** walls, int* wallCount, Vector3* pla
                      float* yaw, float* pitch, GameState* gameState,
                      Torch** torches, int* torchCount, ParticleSystem*** particleSystems,
                      ScaryCharacter* scaryChars, int scaryCharCount, float* gameTimer,
-                     BatteryPickup** batteries, int* batteryCount) {
+                     BatteryPickup** batteries, int* batteryCount,
+                     WeaponPickup** weapons, int* weaponCount) {
     // Free old maze if it exists
     if (*maze) {
         Maze_Destroy(*maze);
@@ -347,6 +539,10 @@ static void InitGame(Maze** maze, WallRect** walls, int* wallCount, Vector3* pla
     if (*batteries) {
         free(*batteries);
         *batteries = NULL;
+    }
+    if (*weapons) {
+        free(*weapons);
+        *weapons = NULL;
     }
     
     // Create and generate a new maze
@@ -385,6 +581,10 @@ static void InitGame(Maze** maze, WallRect** walls, int* wallCount, Vector3* pla
     // Generate battery pickups
     int maxBatteries = 15;
     *batteryCount = Batteries_Generate(*maze, batteries, maxBatteries);
+    
+    // Generate weapon pickups
+    int maxWeapons = 8;
+    *weaponCount = Weapons_Generate(*maze, weapons, maxWeapons);
     
     // Reset player to the start position
     Vector2 startWorld = Maze_CellToWorld(*maze, (int)(*maze)->startPos.x, (int)(*maze)->startPos.y);
@@ -457,6 +657,9 @@ static void InitGame(Maze** maze, WallRect** walls, int* wallCount, Vector3* pla
             scaryChars[i].speed = SCARY_CHAR_SPEED;
             scaryChars[i].radius = SCARY_CHAR_RADIUS;
             scaryChars[i].height = SCARY_CHAR_HEIGHT;
+            scaryChars[i].health = SCARY_CHAR_HEALTH;
+            scaryChars[i].maxHealth = SCARY_CHAR_MAX_HEALTH;
+            scaryChars[i].isDead = false;
         }
     }
     
@@ -797,6 +1000,17 @@ int main(void) {
     BatteryPickup* batteries = NULL;
     int batteryCount = 0;
     
+    // Set up weapon pickups
+    WeaponPickup* weapons = NULL;
+    int weaponCount = 0;
+    
+    // Player weapon state
+    Weapon playerWeapon = {0};
+    playerWeapon.type = WEAPON_NONE;
+    float attackCooldownTimer = 0.0f;
+    float attackAnimationTime = 0.0f;
+    bool isAttacking = false;
+    
     // Set up the scary characters
     ScaryCharacter scaryChars[SCARY_CHAR_COUNT] = {0};
     
@@ -844,7 +1058,13 @@ int main(void) {
                 // Initialize the game
                 InitGame(&maze, &walls, &wallCount, &playerPos, &yaw, &pitch, &gameState,
                          &torches, &torchCount, &particleSystems, scaryChars, SCARY_CHAR_COUNT, &gameTimer,
-                         &batteries, &batteryCount);
+                         &batteries, &batteryCount, &weapons, &weaponCount);
+                
+                // Reset weapon state
+                playerWeapon.type = WEAPON_NONE;
+                attackCooldownTimer = 0.0f;
+                attackAnimationTime = 0.0f;
+                isAttacking = false;
                 gameState = GAME_STATE_PLAYING;
                 gameInitialized = true;
                 mouseCaptured = true;
@@ -900,7 +1120,13 @@ int main(void) {
             
             InitGame(&maze, &walls, &wallCount, &playerPos, &yaw, &pitch, &gameState,
                      &torches, &torchCount, &particleSystems, scaryChars, SCARY_CHAR_COUNT, &gameTimer,
-                     &batteries, &batteryCount);
+                     &batteries, &batteryCount, &weapons, &weaponCount);
+            
+            // Reset weapon state
+            playerWeapon.type = WEAPON_NONE;
+            attackCooldownTimer = 0.0f;
+            attackAnimationTime = 0.0f;
+            isAttacking = false;
             gameState = GAME_STATE_PLAYING;
             mouseCaptured = true;
             DisableCursor();
@@ -950,6 +1176,24 @@ int main(void) {
         // Update battery pickups
         if (gameInitialized && batteries && batteryCount > 0) {
             Batteries_Update(batteries, batteryCount, dt);
+        }
+        
+        // Update weapon pickups
+        if (gameInitialized && weapons && weaponCount > 0) {
+            Weapons_Update(weapons, weaponCount, dt);
+        }
+        
+        // Update attack cooldown
+        if (gameInitialized && gameState == GAME_STATE_PLAYING) {
+            if (attackCooldownTimer > 0.0f) {
+                attackCooldownTimer -= dt;
+            }
+            if (attackAnimationTime > 0.0f) {
+                attackAnimationTime -= dt;
+                if (attackAnimationTime <= 0.0f) {
+                    isAttacking = false;
+                }
+            }
         }
         
         // mouse look (only when game is initialized and playing)
@@ -1070,12 +1314,46 @@ int main(void) {
                 if (playerVelY > 0) playerVelY = 0;
             }
             
+            // Handle attack input (left mouse button)
+            if (playerWeapon.type != WEAPON_NONE && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && 
+                attackCooldownTimer <= 0.0f && !isAttacking) {
+                isAttacking = true;
+                attackAnimationTime = 0.3f; // Attack animation duration
+                attackCooldownTimer = playerWeapon.attackCooldown;
+                
+                // Check for enemy hits
+                Vector2 playerPos2D = (Vector2){playerPos.x, playerPos.z};
+                Vector3 attackPos = (Vector3){playerPos.x, playerPos.y + PLAYER_EYE_HEIGHT, playerPos.z};
+                
+                for (int i = 0; i < SCARY_CHAR_COUNT; i++) {
+                    if (scaryChars[i].isDead) continue;
+                    
+                    Vector2 enemyPos2D = (Vector2){scaryChars[i].position.x, scaryChars[i].position.z};
+                    float dist = sqrtf((playerPos2D.x - enemyPos2D.x) * (playerPos2D.x - enemyPos2D.x) + 
+                                      (playerPos2D.y - enemyPos2D.y) * (playerPos2D.y - enemyPos2D.y));
+                    
+                    // Check if enemy is in attack range
+                    if (dist <= playerWeapon.attackRange) {
+                        // Deal damage
+                        scaryChars[i].health -= playerWeapon.damage;
+                        
+                        if (scaryChars[i].health <= 0.0f) {
+                            scaryChars[i].health = 0.0f;
+                            scaryChars[i].isDead = true;
+                            // Enemy dies - could add death sound/effect here
+                        }
+                    }
+                }
+            }
+            
             // update the scary characters to follow the player
             if (gameState == GAME_STATE_PLAYING) {
                 Vector2 playerPos2D = (Vector2){playerPos.x, playerPos.z};
                 
                 // update each scary character
                 for (int i = 0; i < SCARY_CHAR_COUNT; i++) {
+                    // Skip dead enemies
+                    if (scaryChars[i].isDead) continue;
                     Vector2 charPos = (Vector2){scaryChars[i].position.x, scaryChars[i].position.z};
                     
                     // calculate the direction to the player
@@ -1124,8 +1402,8 @@ int main(void) {
                         scaryChars[i].position.z = charPos.y;
                     }
                     
-                    // check collision with the player
-                    if (CircleCircleIntersect(playerPos2D, PLAYER_RADIUS, charPos, scaryChars[i].radius)) {
+                    // check collision with the player (only if enemy is alive)
+                    if (!scaryChars[i].isDead && CircleCircleIntersect(playerPos2D, PLAYER_RADIUS, charPos, scaryChars[i].radius)) {
                         // Play jumpscare sound
                         if (assets && assets->jumpScareSound.frameCount > 0) {
                             PlaySound(assets->jumpScareSound);
@@ -1157,6 +1435,32 @@ int main(void) {
                             }
                             
                             // Play pickup sound
+                            if (assets && assets->batteryPickupSound.frameCount > 0) {
+                                PlaySound(assets->batteryPickupSound);
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Check for weapon pickup collisions
+            if (weapons && weaponCount > 0) {
+                Vector2 playerPos2D = (Vector2){playerPos.x, playerPos.z};
+                const float WEAPON_PICKUP_RADIUS = 0.8f;
+                
+                for (int i = 0; i < weaponCount; i++) {
+                    if (!weapons[i].collected) {
+                        Vector2 weaponPos2D = (Vector2){weapons[i].position.x, weapons[i].position.z};
+                        
+                        // Check if player is close enough to collect
+                        if (CircleCircleIntersect(playerPos2D, PLAYER_RADIUS, weaponPos2D, WEAPON_PICKUP_RADIUS)) {
+                            // Collect the weapon
+                            weapons[i].collected = true;
+                            
+                            // Equip the weapon
+                            playerWeapon = GetWeaponStats(weapons[i].type);
+                            
+                            // Play pickup sound (reuse battery sound for now)
                             if (assets && assets->batteryPickupSound.frameCount > 0) {
                                 PlaySound(assets->batteryPickupSound);
                             }
@@ -1227,7 +1531,7 @@ int main(void) {
             }
             
             // Controls
-            const char* controlsText = "Controls: WASD - Move | Shift - Run | Space - Jump | F - Toggle Mouse | T - Flashlight | ESC - Quit";
+            const char* controlsText = "Controls: WASD - Move | Shift - Run | Space - Jump | F - Toggle Mouse | T - Flashlight | Left Click - Attack | ESC - Quit";
             int controlsSize = 18;
             int controlsWidth = MeasureText(controlsText, controlsSize);
             DrawText(controlsText, (screenWidth - controlsWidth) / 2, screenHeight - 80, controlsSize, (Color){120, 120, 120, 255});
@@ -1384,6 +1688,12 @@ int main(void) {
             Batteries_Render(batteries, batteryCount, globalTime);
         }
         
+        // Render weapon pickups
+        if (gameInitialized && weapons && weaponCount > 0) {
+            float globalTime = GetTime();
+            Weapons_Render(weapons, weaponCount, globalTime);
+        }
+        
         // Render flashlight dust particles (volumetric effect)
         if (gameInitialized && flashlightDust && flashlightOn && gameState == GAME_STATE_PLAYING) {
             Vector3 flashlightPos = (Vector3){playerPos.x, playerPos.y + PLAYER_EYE_HEIGHT, playerPos.z};
@@ -1396,6 +1706,9 @@ int main(void) {
             float globalTime = GetTime();
             
             for (int i = 0; i < SCARY_CHAR_COUNT; i++) {
+                // Skip dead enemies
+                if (scaryChars[i].isDead) continue;
+                
                 Vector3 charRenderPos = scaryChars[i].position;
                 charRenderPos.y = scaryChars[i].height * 0.5f;
                 
@@ -1443,9 +1756,48 @@ int main(void) {
             DrawLine(cx, cy - 8, cx, cy + 8, RAYWHITE);
         }
         
+        // Render first-person weapon
+        if (gameInitialized && gameState == GAME_STATE_PLAYING && playerWeapon.type != WEAPON_NONE) {
+            int screenWidth = GetScreenWidth();
+            int screenHeight = GetScreenHeight();
+            
+            // Weapon position (bottom right of screen)
+            float weaponX = screenWidth * 0.75f;
+            float weaponY = screenHeight * 0.7f;
+            float weaponSize = 80.0f;
+            
+            // Attack animation offset
+            float attackOffset = 0.0f;
+            if (isAttacking) {
+                attackOffset = sinf((0.3f - attackAnimationTime) / 0.3f * PI) * 30.0f;
+            }
+            
+            weaponX += attackOffset;
+            
+            // Draw weapon based on type
+            Color weaponColor = (Color){180, 180, 190, 255};
+            switch (playerWeapon.type) {
+                case WEAPON_KNIFE:
+                    // Draw knife blade
+                    DrawRectangle((int)weaponX, (int)weaponY, (int)(weaponSize * 0.3f), (int)(weaponSize * 1.2f), weaponColor);
+                    // Draw handle
+                    DrawRectangle((int)(weaponX - weaponSize * 0.1f), (int)(weaponY + weaponSize * 0.6f), 
+                                 (int)(weaponSize * 0.5f), (int)(weaponSize * 0.4f), (Color){80, 50, 30, 255});
+                    break;
+                case WEAPON_CROWBAR:
+                    DrawRectangle((int)weaponX, (int)weaponY, (int)(weaponSize * 0.25f), (int)(weaponSize * 1.5f), weaponColor);
+                    break;
+                case WEAPON_PIPE:
+                    DrawRectangle((int)weaponX, (int)weaponY, (int)(weaponSize * 0.3f), (int)(weaponSize * 1.4f), weaponColor);
+                    break;
+                default:
+                    break;
+            }
+        }
+        
         // draw the HUD
         if (gameInitialized && gameState == GAME_STATE_PLAYING) {
-            DrawText("WASD: move | Shift: run | Space: jump | F: toggle mouse | T: flashlight | R: restart | Esc: quit",
+            DrawText("WASD: move | Shift: run | Space: jump | F: toggle mouse | T: flashlight | Left Click: attack | R: restart | Esc: quit",
                      20, 20, 18, RAYWHITE);
             
             // Display timer
@@ -1491,6 +1843,31 @@ int main(void) {
             // Flashlight status
             const char* flashStatus = flashlightOn ? "ON" : "OFF";
             DrawText(flashStatus, batteryX, batteryY - 20, 16, flashlightOn ? GREEN : GRAY);
+            
+            // Weapon status
+            if (playerWeapon.type != WEAPON_NONE) {
+                const char* weaponName = "None";
+                switch (playerWeapon.type) {
+                    case WEAPON_KNIFE: weaponName = "Knife"; break;
+                    case WEAPON_CROWBAR: weaponName = "Crowbar"; break;
+                    case WEAPON_PIPE: weaponName = "Pipe"; break;
+                    default: break;
+                }
+                char weaponText[64];
+                snprintf(weaponText, sizeof(weaponText), "Weapon: %s", weaponName);
+                DrawText(weaponText, 20, 80, 20, YELLOW);
+                
+                // Attack cooldown indicator
+                if (attackCooldownTimer > 0.0f) {
+                    char cooldownText[32];
+                    snprintf(cooldownText, sizeof(cooldownText), "Cooldown: %.1f", attackCooldownTimer);
+                    DrawText(cooldownText, 20, 105, 16, RED);
+                } else {
+                    DrawText("Left Click to Attack", 20, 105, 16, GREEN);
+                }
+            } else {
+                DrawText("No Weapon - Find one to fight!", 20, 80, 20, RED);
+            }
         }
         
         // Win and game over screens (only when game is initialized)
@@ -1582,6 +1959,7 @@ int main(void) {
     }
     if (assets) Assets_Unload(assets);
     if (flashlightDust) FlashlightDust_Destroy(flashlightDust);
+    if (weapons) free(weapons);
     
     // Cleanup static models
     CleanupCubeModel();
