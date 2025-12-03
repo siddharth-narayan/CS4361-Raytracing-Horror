@@ -155,6 +155,18 @@ GameAssets* Assets_Load(void) {
         TraceLog(LOG_WARNING, "Failed to load battery.mp3 - continuing without battery pickup sound");
     }
     
+    // Load bullet sound (try assets directory first, then current directory)
+    assets->bulletSound = LoadSound("assets/bullet.mp3");
+    if (assets->bulletSound.frameCount == 0) {
+        assets->bulletSound = LoadSound("bullet.mp3");
+    }
+    
+    if (assets->bulletSound.frameCount > 0) {
+        TraceLog(LOG_INFO, "Bullet sound loaded successfully");
+    } else {
+        TraceLog(LOG_WARNING, "Failed to load bullet.mp3 - continuing without bullet sound");
+    }
+    
     assets->loaded = true;
     
     return assets;
@@ -181,6 +193,10 @@ void Assets_Unload(GameAssets* assets) {
     
     if (assets->batteryPickupSound.frameCount > 0) {
         UnloadSound(assets->batteryPickupSound);
+    }
+    
+    if (assets->bulletSound.frameCount > 0) {
+        UnloadSound(assets->bulletSound);
     }
     
     assets->loaded = false;
