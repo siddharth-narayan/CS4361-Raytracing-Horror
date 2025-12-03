@@ -8,8 +8,8 @@
 #include <stdio.h>
 
 // Game Constants
-#define MAZE_WIDTH           15      // Number of cells horizontally
-#define MAZE_HEIGHT          15      // Number of cells vertically
+#define MAZE_WIDTH           8     // Number of cells horizontally
+#define MAZE_HEIGHT          8      // Number of cells vertically
 #define CELL_SIZE            3.0f    // Size of each cell in world units
 #define WALL_THICK           0.2f    // Wall thickness for rendering
 #define WALL_HEIGHT          4.0f    // Height of walls
