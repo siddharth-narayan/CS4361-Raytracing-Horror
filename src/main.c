@@ -1290,6 +1290,7 @@ int main(void) {
         
         // Toggle flashlight (only in playing state)
         if (gameInitialized && gameState == GAME_STATE_PLAYING && IsKeyPressed(KEY_T)) {
+            bool wasOn = flashlightOn;
             if (flashlightBattery > 0.0f) {
                 flashlightOn = !flashlightOn;
                 // Turn off automatically if battery is depleted
@@ -1298,6 +1299,11 @@ int main(void) {
                 }
             } else {
                 flashlightOn = false;
+            }
+            
+            // Play flashlight sound when toggled (if state changed)
+            if (wasOn != flashlightOn && assets && assets->flashlightSound.frameCount > 0) {
+                PlaySound(assets->flashlightSound);
             }
         }
         
@@ -1359,7 +1365,13 @@ int main(void) {
                 flashlightBattery -= FLASHLIGHT_DRAIN_RATE * dt;
                 if (flashlightBattery <= 0.0f) {
                     flashlightBattery = 0.0f;
+                    bool wasOn = flashlightOn;
                     flashlightOn = false;  // Turn off automatically when battery is depleted
+                    
+                    // Play flashlight sound when automatically turned off
+                    if (wasOn && assets && assets->flashlightSound.frameCount > 0) {
+                        PlaySound(assets->flashlightSound);
+                    }
                 }
             }
         }

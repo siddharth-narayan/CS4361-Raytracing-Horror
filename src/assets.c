@@ -191,6 +191,18 @@ GameAssets* Assets_Load(void) {
         TraceLog(LOG_WARNING, "Failed to load reload.mp3 - continuing without reload sound");
     }
     
+    // Load flashlight sound (try assets directory first, then current directory)
+    assets->flashlightSound = LoadSound("assets/flashlight.mp3");
+    if (assets->flashlightSound.frameCount == 0) {
+        assets->flashlightSound = LoadSound("flashlight.mp3");
+    }
+    
+    if (assets->flashlightSound.frameCount > 0) {
+        TraceLog(LOG_INFO, "Flashlight sound loaded successfully");
+    } else {
+        TraceLog(LOG_WARNING, "Failed to load flashlight.mp3 - continuing without flashlight sound");
+    }
+    
     assets->loaded = true;
     
     return assets;
@@ -229,6 +241,10 @@ void Assets_Unload(GameAssets* assets) {
     
     if (assets->reloadSound.frameCount > 0) {
         UnloadSound(assets->reloadSound);
+    }
+    
+    if (assets->flashlightSound.frameCount > 0) {
+        UnloadSound(assets->flashlightSound);
     }
     
     assets->loaded = false;
