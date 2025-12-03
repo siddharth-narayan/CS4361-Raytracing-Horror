@@ -119,6 +119,19 @@ GameAssets* Assets_Load(void) {
         TraceLog(LOG_WARNING, "Failed to load horror.mp3 - continuing without music");
     }
     
+    // Load game menu music (try assets directory first, then current directory)
+    assets->gameMusic = LoadMusicStream("assets/game.mp3");
+    if (assets->gameMusic.frameCount == 0) {
+        assets->gameMusic = LoadMusicStream("game.mp3");
+    }
+    
+    if (assets->gameMusic.frameCount > 0) {
+        assets->gameMusic.looping = true;
+        TraceLog(LOG_INFO, "Game menu music loaded successfully");
+    } else {
+        TraceLog(LOG_WARNING, "Failed to load game.mp3 - continuing without menu music");
+    }
+    
     // Load jumpscare sound - try assets directory first, then current directory
     assets->jumpScareSound = LoadSound("assets/jump.mp3");
     if (assets->jumpScareSound.frameCount == 0) {
@@ -217,6 +230,10 @@ void Assets_Unload(GameAssets* assets) {
     
     if (assets->horrorMusic.frameCount > 0) {
         UnloadMusicStream(assets->horrorMusic);
+    }
+    
+    if (assets->gameMusic.frameCount > 0) {
+        UnloadMusicStream(assets->gameMusic);
     }
     
     if (assets->jumpScareSound.frameCount > 0) {

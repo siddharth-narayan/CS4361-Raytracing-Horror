@@ -1236,16 +1236,24 @@ int main(void) {
     while (!WindowShouldClose()) {
         float dt = GetFrameTime();
         
-        // Update music stream (must be called every frame if music is playing)
+        // Update music streams (must be called every frame if music is playing)
         if (assets && assets->horrorMusic.frameCount > 0) {
             UpdateMusicStream(assets->horrorMusic);
+        }
+        if (assets && assets->gameMusic.frameCount > 0) {
+            UpdateMusicStream(assets->gameMusic);
         }
         
         // Handle menu state
         if (gameState == GAME_STATE_MENU) {
             EnableCursor();
+            // Stop horror music if playing
             if (assets && assets->horrorMusic.frameCount > 0 && IsMusicStreamPlaying(assets->horrorMusic)) {
                 StopMusicStream(assets->horrorMusic);
+            }
+            // Play game menu music if not already playing
+            if (assets && assets->gameMusic.frameCount > 0 && !IsMusicStreamPlaying(assets->gameMusic)) {
+                PlayMusicStream(assets->gameMusic);
             }
             
             // Start game on Enter or Space
@@ -1274,7 +1282,10 @@ int main(void) {
                 flashlightOn = false;
                 flashlightBattery = FLASHLIGHT_MAX_BATTERY;
                 
-                // Start playing horror music when game starts
+                // Stop game menu music and start playing horror music when game starts
+                if (assets && assets->gameMusic.frameCount > 0 && IsMusicStreamPlaying(assets->gameMusic)) {
+                    StopMusicStream(assets->gameMusic);
+                }
                 if (assets && assets->horrorMusic.frameCount > 0) {
                     PlayMusicStream(assets->horrorMusic);
                 }

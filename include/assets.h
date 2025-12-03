@@ -10,6 +10,7 @@ typedef struct {
     Texture2D floorTexture;
     Texture2D ceilingTexture;
     Music horrorMusic;
+    Music gameMusic;
     Sound jumpScareSound;
     Sound footstepSound;
     Sound batteryPickupSound;
