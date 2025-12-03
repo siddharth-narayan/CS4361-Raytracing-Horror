@@ -179,6 +179,18 @@ GameAssets* Assets_Load(void) {
         TraceLog(LOG_WARNING, "Failed to load victory.mp3 - continuing without victory sound");
     }
     
+    // Load reload sound (try assets directory first, then current directory)
+    assets->reloadSound = LoadSound("assets/reload.mp3");
+    if (assets->reloadSound.frameCount == 0) {
+        assets->reloadSound = LoadSound("reload.mp3");
+    }
+    
+    if (assets->reloadSound.frameCount > 0) {
+        TraceLog(LOG_INFO, "Reload sound loaded successfully");
+    } else {
+        TraceLog(LOG_WARNING, "Failed to load reload.mp3 - continuing without reload sound");
+    }
+    
     assets->loaded = true;
     
     return assets;
@@ -213,6 +225,10 @@ void Assets_Unload(GameAssets* assets) {
     
     if (assets->victorySound.frameCount > 0) {
         UnloadSound(assets->victorySound);
+    }
+    
+    if (assets->reloadSound.frameCount > 0) {
+        UnloadSound(assets->reloadSound);
     }
     
     assets->loaded = false;

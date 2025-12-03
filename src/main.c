@@ -1667,9 +1667,9 @@ int main(void) {
                             // Add bullets when picking up guns
                             bulletCount += 1; // Each gun pickup gives 1 bullet
                             
-                            // Play pickup sound (reuse battery sound for now)
-                            if (assets && assets->batteryPickupSound.frameCount > 0) {
-                                PlaySound(assets->batteryPickupSound);
+                            // Play reload sound when picking up weapon
+                            if (assets && assets->reloadSound.frameCount > 0) {
+                                PlaySound(assets->reloadSound);
                             }
                         }
                     }
