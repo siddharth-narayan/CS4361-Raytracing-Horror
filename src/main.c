@@ -1091,6 +1091,11 @@ int main(void) {
                 StopSound(assets->jumpScareSound);
             }
             
+            // Stop victory sound if playing
+            if (assets && assets->victorySound.frameCount > 0 && IsSoundPlaying(assets->victorySound)) {
+                StopSound(assets->victorySound);
+            }
+            
             InitGame(&maze, &walls, &wallCount, &playerPos, &yaw, &pitch, &gameState,
                      &torches, &torchCount, &particleSystems, scaryChars, SCARY_CHAR_COUNT, &gameTimer,
                      &batteries, &batteryCount, &weapons, &weaponCount);
@@ -1450,6 +1455,10 @@ int main(void) {
             int cellX, cellY;
             Maze_WorldToCell(maze, playerPos.x, playerPos.z, &cellX, &cellY);
             if (Maze_IsExit(maze, cellX, cellY)) {
+                // Only play victory sound once when first winning
+                if (gameState != GAME_STATE_WON && assets && assets->victorySound.frameCount > 0) {
+                    PlaySound(assets->victorySound);
+                }
                 gameState = GAME_STATE_WON;
                 // update the best record if this is better
                 if (bestRecord < 0.0f || gameTimer < bestRecord) {

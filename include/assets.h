@@ -14,6 +14,7 @@ typedef struct {
     Sound footstepSound;
     Sound batteryPickupSound;
     Sound bulletSound;
+    Sound victorySound;
     bool loaded;
 } GameAssets;
 

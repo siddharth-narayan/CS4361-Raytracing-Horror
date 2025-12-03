@@ -167,6 +167,18 @@ GameAssets* Assets_Load(void) {
         TraceLog(LOG_WARNING, "Failed to load bullet.mp3 - continuing without bullet sound");
     }
     
+    // Load victory sound (try assets directory first, then current directory)
+    assets->victorySound = LoadSound("assets/victory.mp3");
+    if (assets->victorySound.frameCount == 0) {
+        assets->victorySound = LoadSound("victory.mp3");
+    }
+    
+    if (assets->victorySound.frameCount > 0) {
+        TraceLog(LOG_INFO, "Victory sound loaded successfully");
+    } else {
+        TraceLog(LOG_WARNING, "Failed to load victory.mp3 - continuing without victory sound");
+    }
+    
     assets->loaded = true;
     
     return assets;
@@ -197,6 +209,10 @@ void Assets_Unload(GameAssets* assets) {
     
     if (assets->bulletSound.frameCount > 0) {
         UnloadSound(assets->bulletSound);
+    }
+    
+    if (assets->victorySound.frameCount > 0) {
+        UnloadSound(assets->victorySound);
     }
     
     assets->loaded = false;
