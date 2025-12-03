@@ -5,7 +5,8 @@
 #include <string.h>
 
 Texture2D GenerateStoneWallTexture(int width, int height) {
-    Image img = GenImageColor(width, height, (Color){80, 80, 85, 255});
+    // Darker base color for horror atmosphere (5% lighter)
+    Image img = GenImageColor(width, height, (Color){47, 47, 53, 255});
     
     // access the pixel data directly
     Color* pixels = (Color*)img.data;
@@ -18,13 +19,13 @@ Texture2D GenerateStoneWallTexture(int width, int height) {
             bool isMortar = (gridX < 2 || gridY < 2 || gridX > 30 || gridY > 30);
             
             if (isMortar) {
-                pixels[y * width + x] = (Color){50, 50, 55, 255};
+                pixels[y * width + x] = (Color){26, 26, 32, 255};
             } else {
-                // Add noise for stone texture
+                // Add noise for stone texture (darker for horror)
                 float noise = ((float)(rand() % 100) / 100.0f) * 0.3f;
-                int baseR = 80 + (int)(noise * 40);
-                int baseG = 80 + (int)(noise * 30);
-                int baseB = 85 + (int)(noise * 25);
+                int baseR = 47 + (int)(noise * 26);
+                int baseG = 47 + (int)(noise * 21);
+                int baseB = 53 + (int)(noise * 16);
                 pixels[y * width + x] = (Color){baseR, baseG, baseB, 255};
             }
         }
@@ -37,8 +38,8 @@ Texture2D GenerateStoneWallTexture(int width, int height) {
 
 // Generate procedural wooden floor texture
 Texture2D GenerateWoodFloorTexture(int width, int height) {
-    // Create image using raylib (it manages the memory)
-    Image img = GenImageColor(width, height, (Color){120, 90, 60, 255});
+    // Darker base color for horror atmosphere (5% lighter)
+    Image img = GenImageColor(width, height, (Color){53, 37, 26, 255});
     
     // Access pixel data directly
     Color* pixels = (Color*)img.data;
@@ -54,15 +55,15 @@ Texture2D GenerateWoodFloorTexture(int width, int height) {
             float grain = sinf((float)x * 0.1f + (float)plankIdx * 0.5f) * 0.1f;
             float variation = ((float)(rand() % 100) / 100.0f) * 0.2f;
             
-            int r = 120 + (int)((grain + variation) * 40);
-            int g = 90 + (int)((grain + variation) * 30);
-            int b = 60 + (int)((grain + variation) * 20);
+            int r = 53 + (int)((grain + variation) * 26);
+            int g = 37 + (int)((grain + variation) * 21);
+            int b = 26 + (int)((grain + variation) * 16);
             
-            // Plank boundaries
+            // Plank boundaries (darker)
             if ((y % plankHeight) < 2) {
-                r = (int)(r * 0.7f);
-                g = (int)(g * 0.7f);
-                b = (int)(b * 0.7f);
+                r = (int)(r * 0.6f);
+                g = (int)(g * 0.6f);
+                b = (int)(b * 0.6f);
             }
             
             pixels[y * width + x] = (Color){r, g, b, 255};
@@ -76,19 +77,19 @@ Texture2D GenerateWoodFloorTexture(int width, int height) {
 
 // Generate simple ceiling texture
 Texture2D GenerateCeilingTexture(int width, int height) {
-    // Create image using raylib (it manages the memory)
-    Image img = GenImageColor(width, height, (Color){150, 150, 155, 255});
+    // Much darker ceiling for horror atmosphere (5% lighter)
+    Image img = GenImageColor(width, height, (Color){21, 21, 26, 255});
     
     // Access pixel data directly
     Color* pixels = (Color*)img.data;
     
-    // Add subtle noise
+    // Add subtle noise (darker)
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
             float noise = ((float)(rand() % 100) / 100.0f) * 0.15f;
-            int r = 150 + (int)(noise * 20);
-            int g = 150 + (int)(noise * 20);
-            int b = 155 + (int)(noise * 20);
+            int r = 21 + (int)(noise * 11);
+            int g = 21 + (int)(noise * 11);
+            int b = 26 + (int)(noise * 11);
             pixels[y * width + x] = (Color){r, g, b, 255};
         }
     }
@@ -118,6 +119,42 @@ GameAssets* Assets_Load(void) {
         TraceLog(LOG_WARNING, "Failed to load horror.mp3 - continuing without music");
     }
     
+    // Load jumpscare sound - try assets directory first, then current directory
+    assets->jumpScareSound = LoadSound("assets/jump.mp3");
+    if (assets->jumpScareSound.frameCount == 0) {
+        assets->jumpScareSound = LoadSound("jump.mp3");
+    }
+    
+    if (assets->jumpScareSound.frameCount > 0) {
+        TraceLog(LOG_INFO, "Jumpscare sound loaded successfully");
+    } else {
+        TraceLog(LOG_WARNING, "Failed to load jump.mp3 - continuing without jumpscare sound");
+    }
+    
+    // Load footstep sound
+    assets->footstepSound = LoadSound("assets/footstep.mp3");
+    if (assets->footstepSound.frameCount == 0) {
+        assets->footstepSound = LoadSound("footstep.mp3");
+    }
+    
+    if (assets->footstepSound.frameCount > 0) {
+        TraceLog(LOG_INFO, "Footstep sound loaded successfully");
+    } else {
+        TraceLog(LOG_WARNING, "Failed to load footstep.mp3 - continuing without footstep sounds");
+    }
+    
+    // Load battery pickup sound (try assets directory first, then current directory)
+    assets->batteryPickupSound = LoadSound("assets/battery.mp3");
+    if (assets->batteryPickupSound.frameCount == 0) {
+        assets->batteryPickupSound = LoadSound("battery.mp3");
+    }
+    
+    if (assets->batteryPickupSound.frameCount > 0) {
+        TraceLog(LOG_INFO, "Battery pickup sound loaded successfully");
+    } else {
+        TraceLog(LOG_WARNING, "Failed to load battery.mp3 - continuing without battery pickup sound");
+    }
+    
     assets->loaded = true;
     
     return assets;
@@ -132,6 +169,18 @@ void Assets_Unload(GameAssets* assets) {
     
     if (assets->horrorMusic.frameCount > 0) {
         UnloadMusicStream(assets->horrorMusic);
+    }
+    
+    if (assets->jumpScareSound.frameCount > 0) {
+        UnloadSound(assets->jumpScareSound);
+    }
+    
+    if (assets->footstepSound.frameCount > 0) {
+        UnloadSound(assets->footstepSound);
+    }
+    
+    if (assets->batteryPickupSound.frameCount > 0) {
+        UnloadSound(assets->batteryPickupSound);
     }
     
     assets->loaded = false;
@@ -235,11 +284,10 @@ int Torches_Generate(const Maze* maze, Torch** outTorches, int maxTorches) {
     return count;
 }
 
-// update the torch flickering (more erratic for scary atmosphere)
+// update the torch flickering
 void Torches_Update(Torch* torches, int count, float dt) {
     for (int i = 0; i < count; i++) {
-        // Variable flicker speed for more erratic behavior
-        float speed = 6.0f + 4.0f * sinf(torches[i].flickerTime * 0.5f);
+        float speed = 1.5f + 0.3f * sinf(torches[i].flickerTime * 0.3f);
         torches[i].flickerTime += dt * speed;
         if (torches[i].flickerTime > 6.28f) {
             torches[i].flickerTime -= 6.28f;
@@ -272,7 +320,7 @@ ParticleSystem* ParticleSystem_Create(int maxParticles) {
     
     ps->maxParticles = maxParticles;
     ps->activeParticles = 0;
-    ps->emitRate = 15.0f;
+    ps->emitRate = 8.0f;  // Reduced from 15.0f for smoother effect
     ps->emitAccumulator = 0.0f;
     ps->emitterPos = (Vector3){0, 0, 0};
     
@@ -301,14 +349,19 @@ void ParticleSystem_Update(ParticleSystem* ps, Vector3 emitterPos, float dt) {
         Particle* p = &ps->particles[ps->activeParticles];
         p->position = emitterPos;
         p->position.y += 0.25f; // Slight offset above torch
+        
+        // Much smoother, more vertical movement with minimal horizontal spread
+        float horizontalSpread = 0.02f;  // Reduced from ~0.2f
+        float verticalSpeed = 0.15f + ((float)(rand() % 30) / 1000.0f);  // Reduced from ~0.6f
+        
         p->velocity = (Vector3){
-            ((float)(rand() % 200) - 100.0f) / 500.0f,
-            ((float)(rand() % 300) + 100.0f) / 500.0f,
-            ((float)(rand() % 200) - 100.0f) / 500.0f
+            ((float)(rand() % 100) - 50.0f) / 2500.0f * horizontalSpread,  // Much smaller X movement
+            verticalSpeed,  // Smoother upward movement
+            ((float)(rand() % 100) - 50.0f) / 2500.0f * horizontalSpread   // Much smaller Z movement
         };
         p->life = 1.0f;
-        p->maxLife = 0.5f + ((float)(rand() % 50) / 100.0f);
-        p->size = 0.05f + ((float)(rand() % 30) / 1000.0f);
+        p->maxLife = 0.8f + ((float)(rand() % 40) / 100.0f);  // Longer lifetime for smoother fade
+        p->size = 0.06f + ((float)(rand() % 20) / 1000.0f);  // Less size variation
         p->color = (Color){
             255,
             150 + (rand() % 50),
@@ -322,8 +375,8 @@ void ParticleSystem_Update(ParticleSystem* ps, Vector3 emitterPos, float dt) {
     for (int i = 0; i < ps->activeParticles; i++) {
         Particle* p = &ps->particles[i];
         
-        // Update physics
-        p->velocity.y += -2.0f * dt; // Gravity
+        // Update physics with smoother, gentler movement
+        p->velocity.y += -1.2f * dt; // Reduced gravity for smoother, slower fall
         p->position.x += p->velocity.x * dt;
         p->position.y += p->velocity.y * dt;
         p->position.z += p->velocity.z * dt;
@@ -363,5 +416,136 @@ void Lighting_UpdateTorchLights(const Torch* torches, int count, float time) {
     (void)torches;
     (void)count;
     (void)time;
+}
+
+// Generate battery pickups in the maze
+int Batteries_Generate(const Maze* maze, BatteryPickup** outBatteries, int maxBatteries) {
+    if (!maze || !outBatteries || maxBatteries <= 0) return 0;
+    
+    *outBatteries = (BatteryPickup*)malloc(maxBatteries * sizeof(BatteryPickup));
+    if (!*outBatteries) return 0;
+    
+    int count = 0;
+    const float batteryHeight = 0.8f; // Height above ground
+    const float batteryPlacementChance = 0.12f; // 12% chance per cell
+    
+    // Place batteries randomly in open cells (not on walls, not at start/exit)
+    for (int y = 0; y < maze->height && count < maxBatteries; y++) {
+        for (int x = 0; x < maze->width && count < maxBatteries; x++) {
+            // Skip start and exit positions
+            bool isStart = (x == (int)maze->startPos.x && y == (int)maze->startPos.y);
+            bool isExit = (x == (int)maze->exitPos.x && y == (int)maze->exitPos.y);
+            
+            if (isStart || isExit) continue;
+            
+            // Random chance to place a battery in this cell
+            if ((float)rand() / (float)RAND_MAX < batteryPlacementChance) {
+                Vector2 worldPos = Maze_CellToWorld(maze, x, y);
+                
+                // Add some random offset within the cell for variety
+                float offsetX = ((float)(rand() % 100) / 100.0f - 0.5f) * maze->cellSize * 0.6f;
+                float offsetZ = ((float)(rand() % 100) / 100.0f - 0.5f) * maze->cellSize * 0.6f;
+                
+                (*outBatteries)[count].position = (Vector3){
+                    worldPos.x + offsetX,
+                    batteryHeight,
+                    worldPos.y + offsetZ
+                };
+                (*outBatteries)[count].collected = false;
+                (*outBatteries)[count].bobTime = (float)(rand() % 1000) / 1000.0f * 6.28f; // Random starting phase
+                (*outBatteries)[count].rotation = (float)(rand() % 360) * DEG2RAD;
+                
+                count++;
+            }
+        }
+    }
+    
+    return count;
+}
+
+// Update battery animations
+void Batteries_Update(BatteryPickup* batteries, int count, float dt) {
+    if (!batteries) return;
+    
+    for (int i = 0; i < count; i++) {
+        if (!batteries[i].collected) {
+            // Bob up and down
+            batteries[i].bobTime += dt * 2.0f; // Animation speed
+            if (batteries[i].bobTime > 6.28f) {
+                batteries[i].bobTime -= 6.28f;
+            }
+            
+            // Rotate slowly
+            batteries[i].rotation += dt * 1.5f;
+            if (batteries[i].rotation > 6.28f) {
+                batteries[i].rotation -= 6.28f;
+            }
+        }
+    }
+}
+
+// Render battery pickups with visual effects
+void Batteries_Render(const BatteryPickup* batteries, int count, float globalTime) {
+    if (!batteries) return;
+    
+    for (int i = 0; i < count; i++) {
+        if (batteries[i].collected) continue;
+        
+        Vector3 pos = batteries[i].position;
+        
+        // Bob animation (vertical movement)
+        float bobOffset = sinf(batteries[i].bobTime) * 0.15f;
+        pos.y = batteries[i].position.y + bobOffset;
+        
+        // Battery size
+        float batterySize = 0.25f;
+        
+        // Main battery body (green/yellow glowing cube)
+        Color batteryColor = (Color){100, 255, 100, 255}; // Bright green
+        DrawCube(pos, batterySize * 0.6f, batterySize * 1.2f, batterySize * 0.4f, batteryColor);
+        
+        // Battery terminals (top and bottom)
+        Color terminalColor = (Color){150, 255, 150, 255};
+        Vector3 topTerminal = pos;
+        topTerminal.y += batterySize * 0.6f;
+        DrawCube(topTerminal, batterySize * 0.5f, batterySize * 0.2f, batterySize * 0.3f, terminalColor);
+        
+        Vector3 bottomTerminal = pos;
+        bottomTerminal.y -= batterySize * 0.6f;
+        DrawCube(bottomTerminal, batterySize * 0.5f, batterySize * 0.2f, batterySize * 0.3f, terminalColor);
+        
+        // Glowing effect (pulsing sphere around battery)
+        float pulse = 0.7f + 0.3f * sinf(globalTime * 3.0f + i);
+        float glowSize = batterySize * 1.5f * pulse;
+        Color glowColor = (Color){
+            (unsigned char)(100 * pulse),
+            (unsigned char)(255 * pulse),
+            (unsigned char)(100 * pulse),
+            (unsigned char)(80 * pulse)
+        };
+        DrawSphere(pos, glowSize, glowColor);
+        
+        // Light pool on the floor (similar to torches but smaller)
+        Vector3 floorLightPos = (Vector3){pos.x, 0.05f, pos.z};
+        float poolRadius = 0.6f * pulse;
+        float poolAlpha = 0.3f * pulse;
+        Color poolColor = (Color){
+            (unsigned char)(100 * pulse),
+            (unsigned char)(255 * pulse),
+            (unsigned char)(100 * pulse),
+            (unsigned char)(poolAlpha * 255)
+        };
+        
+        // Draw light pool as concentric circles
+        for (int layer = 0; layer < 3; layer++) {
+            float layerRadius = poolRadius * (1.0f - layer * 0.33f);
+            float layerAlpha = poolAlpha * (1.0f - layer * 0.4f);
+            if (layerRadius > 0.1f) {
+                Color layerColor = poolColor;
+                layerColor.a = (unsigned char)(layerAlpha * 255);
+                DrawPlane(floorLightPos, (Vector2){layerRadius * 2.0f, layerRadius * 2.0f}, layerColor);
+            }
+        }
+    }
 }
 
