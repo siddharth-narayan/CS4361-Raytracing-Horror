@@ -360,15 +360,18 @@ static void BulletSystem_Update(BulletSystem* bs, float dt, const WallRect* wall
         for (int j = 0; j < enemyCount; j++) {
             if (enemies[j].isDead) continue;
             
+            // Calculate 3D distance to enemy center (enemy center is at position.y + height/2)
+            float enemyCenterY = enemies[j].position.y + enemies[j].height * 0.5f;
             float dx_enemy = bullet->position.x - enemies[j].position.x;
-            float dy_enemy = bullet->position.y - enemies[j].position.y;
+            float dy_enemy = bullet->position.y - enemyCenterY;
             float dz_enemy = bullet->position.z - enemies[j].position.z;
             float dist2D = sqrtf(dx_enemy*dx_enemy + dz_enemy*dz_enemy);
+            float distY = fabsf(dy_enemy);
             
-            // Check if bullet is at enemy height and within radius
-            if (bullet->position.y >= enemies[j].position.y && 
-                bullet->position.y <= enemies[j].position.y + enemies[j].height &&
-                dist2D <= enemies[j].radius + BULLET_RADIUS) {
+            // Check if bullet is within enemy bounds (using cylinder collision)
+            // Check horizontal distance (2D circle) and vertical distance (height)
+            if (dist2D <= enemies[j].radius + BULLET_RADIUS &&
+                distY <= enemies[j].height * 0.5f + BULLET_RADIUS) {
                 // Hit enemy!
                 enemies[j].health = 0.0f;
                 enemies[j].isDead = true;
