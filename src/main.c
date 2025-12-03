@@ -46,9 +46,225 @@ typedef struct {
     float height;
 } ScaryCharacter;
 
+// Dust particle for flashlight beam volumetric effect
+typedef struct {
+    Vector3 position;
+    Vector3 velocity;
+    float life;
+    float maxLife;
+    float size;
+    float distance;  // Distance along beam
+} DustParticle;
+
+// Dust particle system for flashlight
+typedef struct {
+    DustParticle* particles;
+    int maxParticles;
+    int activeParticles;
+    float emitAccumulator;  // Accumulator for particle emission
+} FlashlightDustSystem;
+
 // Helper function: Clamp float value
 static inline float clampf(float v, float lo, float hi) {
     return (v < lo) ? lo : (v > hi) ? hi : v;
+}
+
+// Create flashlight dust particle system
+static FlashlightDustSystem* FlashlightDust_Create(int maxParticles) {
+    FlashlightDustSystem* dust = (FlashlightDustSystem*)malloc(sizeof(FlashlightDustSystem));
+    if (!dust) return NULL;
+    
+    dust->particles = (DustParticle*)malloc(maxParticles * sizeof(DustParticle));
+    if (!dust->particles) {
+        free(dust);
+        return NULL;
+    }
+    
+    dust->maxParticles = maxParticles;
+    dust->activeParticles = 0;
+    dust->emitAccumulator = 0.0f;
+    
+    return dust;
+}
+
+// Destroy flashlight dust system
+static void FlashlightDust_Destroy(FlashlightDustSystem* dust) {
+    if (!dust) return;
+    if (dust->particles) free(dust->particles);
+    free(dust);
+}
+
+// Update flashlight dust particles
+static void FlashlightDust_Update(FlashlightDustSystem* dust, Vector3 flashlightPos, Vector3 flashlightDir, 
+                                   bool flashlightOn, float dt) {
+    if (!dust) return;
+    
+    if (!flashlightOn) {
+        // Clear particles when flashlight is off
+        dust->activeParticles = 0;
+        dust->emitAccumulator = 0.0f;
+        return;
+    }
+    
+    const float FLASHLIGHT_RANGE = 15.0f;
+    const float CONE_ANGLE = 30.0f; // degrees
+    const float CONE_RADIUS_MAX = FLASHLIGHT_RANGE * tanf(DEG2RAD * CONE_ANGLE);
+    const float EMIT_RATE = 25.0f; // particles per second
+    
+    // Reset accumulator if flashlight was just turned off
+    if (!flashlightOn) {
+        dust->emitAccumulator = 0.0f;
+        return;
+    }
+    
+    // Emit new particles
+    dust->emitAccumulator += EMIT_RATE * dt;
+    int toEmit = (int)dust->emitAccumulator;
+    dust->emitAccumulator -= (float)toEmit;
+    
+    for (int i = 0; i < toEmit && dust->activeParticles < dust->maxParticles; i++) {
+        DustParticle* p = &dust->particles[dust->activeParticles];
+        
+        // Spawn particle at random distance along beam (closer to player for better visibility)
+        float spawnDistance = ((float)(rand() % 100) / 100.0f) * FLASHLIGHT_RANGE * 0.8f;
+        
+        // Calculate position along beam with random offset in cone
+        Vector3 basePos = (Vector3){
+            flashlightPos.x + flashlightDir.x * spawnDistance,
+            flashlightPos.y + flashlightDir.y * spawnDistance,
+            flashlightPos.z + flashlightDir.z * spawnDistance
+        };
+        
+        // Get perpendicular vectors to flashlight direction using cross product
+        Vector3 worldUp = (Vector3){0, 1, 0};
+        Vector3 perp1, perp2;
+        
+        // If flashlight is pointing straight up/down, use different reference
+        if (fabsf(flashlightDir.y) > 0.99f) {
+            Vector3 worldRight = (Vector3){1, 0, 0};
+            // perp1 = worldRight x flashlightDir
+            perp1 = (Vector3){
+                worldRight.y * flashlightDir.z - worldRight.z * flashlightDir.y,
+                worldRight.z * flashlightDir.x - worldRight.x * flashlightDir.z,
+                worldRight.x * flashlightDir.y - worldRight.y * flashlightDir.x
+            };
+        } else {
+            // perp1 = worldUp x flashlightDir
+            perp1 = (Vector3){
+                worldUp.y * flashlightDir.z - worldUp.z * flashlightDir.y,
+                worldUp.z * flashlightDir.x - worldUp.x * flashlightDir.z,
+                worldUp.x * flashlightDir.y - worldUp.y * flashlightDir.x
+            };
+        }
+        
+        // Normalize perp1
+        float len1 = sqrtf(perp1.x*perp1.x + perp1.y*perp1.y + perp1.z*perp1.z);
+        if (len1 > 0.001f) {
+            perp1.x /= len1; perp1.y /= len1; perp1.z /= len1;
+        }
+        
+        // perp2 = flashlightDir x perp1
+        perp2 = (Vector3){
+            flashlightDir.y * perp1.z - flashlightDir.z * perp1.y,
+            flashlightDir.z * perp1.x - flashlightDir.x * perp1.z,
+            flashlightDir.x * perp1.y - flashlightDir.y * perp1.x
+        };
+        
+        // Normalize perp2
+        float len2 = sqrtf(perp2.x*perp2.x + perp2.y*perp2.y + perp2.z*perp2.z);
+        if (len2 > 0.001f) {
+            perp2.x /= len2; perp2.y /= len2; perp2.z /= len2;
+        }
+        
+        // Random angle and radius in cone
+        float angle = ((float)(rand() % 1000) / 1000.0f) * 2.0f * PI;
+        float radius = ((float)(rand() % 100) / 100.0f) * CONE_RADIUS_MAX * (spawnDistance / FLASHLIGHT_RANGE);
+        
+        p->position = (Vector3){
+            basePos.x + (perp1.x * cosf(angle) + perp2.x * sinf(angle)) * radius,
+            basePos.y + (perp1.y * cosf(angle) + perp2.y * sinf(angle)) * radius,
+            basePos.z + (perp1.z * cosf(angle) + perp2.z * sinf(angle)) * radius
+        };
+        
+        // Slow drift velocity (random, gentle movement)
+        p->velocity = (Vector3){
+            ((float)(rand() % 100) - 50.0f) / 500.0f,
+            ((float)(rand() % 100) - 50.0f) / 500.0f,
+            ((float)(rand() % 100) - 50.0f) / 500.0f
+        };
+        
+        p->distance = spawnDistance;
+        p->life = 1.0f;
+        p->maxLife = 3.0f + ((float)(rand() % 100) / 100.0f) * 2.0f; // 3-5 seconds
+        p->size = 0.005f + ((float)(rand() % 10) / 1000.0f); // 0.005-0.015 (much smaller, more realistic)
+        
+        dust->activeParticles++;
+    }
+    
+    // Update existing particles
+    for (int i = 0; i < dust->activeParticles; i++) {
+        DustParticle* p = &dust->particles[i];
+        
+        // Update position with drift
+        p->position.x += p->velocity.x * dt;
+        p->position.y += p->velocity.y * dt;
+        p->position.z += p->velocity.z * dt;
+        
+        // Update life
+        p->life -= dt;
+        
+        // Remove dead particles
+        if (p->life <= 0.0f) {
+            dust->particles[i] = dust->particles[dust->activeParticles - 1];
+            dust->activeParticles--;
+            i--;
+        }
+    }
+}
+
+// Render flashlight dust particles with volumetric effect
+static void FlashlightDust_Render(const FlashlightDustSystem* dust, Vector3 flashlightPos, Vector3 flashlightDir) {
+    if (!dust || dust->activeParticles == 0) return;
+    
+    const float FLASHLIGHT_RANGE = 15.0f;
+    
+    for (int i = 0; i < dust->activeParticles; i++) {
+        const DustParticle* p = &dust->particles[i];
+        
+        // Calculate distance from flashlight
+        float dx = p->position.x - flashlightPos.x;
+        float dy = p->position.y - flashlightPos.y;
+        float dz = p->position.z - flashlightPos.z;
+        float dist = sqrtf(dx*dx + dy*dy + dz*dz);
+        
+        // Check if particle is within flashlight cone
+        if (dist > 0.001f) {
+            Vector3 toParticle = (Vector3){dx/dist, dy/dist, dz/dist};
+            float dot = flashlightDir.x * toParticle.x + flashlightDir.y * toParticle.y + flashlightDir.z * toParticle.z;
+            float coneAngle = cosf(DEG2RAD * 30.0f);
+            
+            if (dot >= coneAngle && dist <= FLASHLIGHT_RANGE) {
+                // Calculate alpha based on life and distance
+                float lifeAlpha = p->life / p->maxLife;
+                float distanceAlpha = 1.0f - clampf(dist / FLASHLIGHT_RANGE, 0.0f, 1.0f);
+                float angleFactor = (dot - coneAngle) / (1.0f - coneAngle); // Brighter in center
+                
+                // More solid/visible alpha while keeping small size
+                float alpha = lifeAlpha * distanceAlpha * angleFactor * 0.85f; // Increased for visibility
+                
+                // Bright white-gray color for better visibility
+                Color dustColor = (Color){
+                    240 + (rand() % 15),  // Bright white-gray
+                    240 + (rand() % 15),
+                    235 + (rand() % 20),
+                    (unsigned char)(alpha * 255)
+                };
+                
+                // Draw dust particle as small but solid sphere
+                DrawSphere(p->position, p->size, dustColor);
+            }
+        }
+    }
 }
 
 // Circle (player) vs axis-aligned rectangle (wall) collision in XZ plane
@@ -604,6 +820,9 @@ int main(void) {
     const float FOOTSTEP_INTERVAL_WALK = 0.5f;  // Time between footsteps when walking
     const float FOOTSTEP_INTERVAL_RUN = 0.3f;   // Time between footsteps when running
     
+    // Flashlight dust particle system
+    FlashlightDustSystem* flashlightDust = FlashlightDust_Create(150); // Max 150 dust particles
+    
         // Start the main game loop
     while (!WindowShouldClose()) {
         float dt = GetFrameTime();
@@ -749,6 +968,13 @@ int main(void) {
             cosf(pitch) * cosf(yaw)
         };
         Vector3 right = (Vector3){cosf(yaw), 0.0f, -sinf(yaw)};
+        
+        // Update flashlight dust particles (after forward vector is calculated)
+        if (gameInitialized && flashlightDust && gameState == GAME_STATE_PLAYING) {
+            Vector3 flashlightPos = (Vector3){playerPos.x, playerPos.y + PLAYER_EYE_HEIGHT, playerPos.z};
+            Vector3 flashlightDir = forward;
+            FlashlightDust_Update(flashlightDust, flashlightPos, flashlightDir, flashlightOn, dt);
+        }
         
         // player movement input (only when game is initialized)
         if (gameInitialized && gameState == GAME_STATE_PLAYING) {
@@ -1028,8 +1254,6 @@ int main(void) {
         if (torches && torchCount > 0) {
             Torches_Render(torches, torchCount);
             
-            float globalTime = GetTime();
-            
             for (int i = 0; i < torchCount; i++) {
                 // Subtle, minimal flickering
                 float baseFlicker = 0.92f + 0.08f * sinf(torches[i].flickerTime);
@@ -1160,6 +1384,13 @@ int main(void) {
             Batteries_Render(batteries, batteryCount, globalTime);
         }
         
+        // Render flashlight dust particles (volumetric effect)
+        if (gameInitialized && flashlightDust && flashlightOn && gameState == GAME_STATE_PLAYING) {
+            Vector3 flashlightPos = (Vector3){playerPos.x, playerPos.y + PLAYER_EYE_HEIGHT, playerPos.z};
+            Vector3 flashlightDir = forward;
+            FlashlightDust_Render(flashlightDust, flashlightPos, flashlightDir);
+        }
+        
         // render the scary characters (dark, menacing figures)
         if (gameState == GAME_STATE_PLAYING || gameState == GAME_STATE_GAMEOVER) {
             float globalTime = GetTime();
@@ -1227,7 +1458,6 @@ int main(void) {
             
             // Display flashlight battery
             int screenWidth = GetScreenWidth();
-            int screenHeight = GetScreenHeight();
             int batteryX = screenWidth - 250;
             int batteryY = 20;
             int batteryWidth = 220;  // Made much longer
@@ -1351,6 +1581,7 @@ int main(void) {
         free(particleSystems);
     }
     if (assets) Assets_Unload(assets);
+    if (flashlightDust) FlashlightDust_Destroy(flashlightDust);
     
     // Cleanup static models
     CleanupCubeModel();
