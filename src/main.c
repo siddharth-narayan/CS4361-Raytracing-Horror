@@ -1,4 +1,11 @@
-#include <raylib.h>
+#include "raylib.h"
+#include "../include/maze.h"
+#include "../include/assets.h"
+#include <math.h>
+#include <stdbool.h>
+#include <stdlib.h>
+#include <time.h>
+#include <stdio.h>
 
 // Game Constants
 #define MAZE_WIDTH           8     // Number of cells horizontally
@@ -7,9 +14,13 @@
 #define WALL_THICK           0.2f    // Wall thickness for rendering
 #define WALL_HEIGHT          4.0f    // Height of walls
 
-int resLoc = GetShaderLocation(shader, "uResolution");
-int timeLoc = GetShaderLocation(shader, "uTime");
-Vector2 res = { (float)w, (float)h };
+#define PLAYER_RADIUS        0.30f   // Collision radius (XZ)
+#define PLAYER_EYE_HEIGHT    1.80f   // Camera height above "feet"
+#define GRAVITY             -18.0f
+#define JUMP_SPEED           6.5f
+#define MOVE_SPEED           5.0f
+#define RUN_MULTIPLIER       1.8f
+#define MOUSE_SENS           0.0020f // Radians per pixel
 
 #define SCARY_CHAR_COUNT     5       // Number of scary characters
 #define SCARY_CHAR_SPEED     2.8f    // Scary character movement speed
@@ -1481,9 +1492,14 @@ int main(void) {
             if (!CollidesAny(testX, PLAYER_RADIUS, walls, wallCount)) {
                 pXZ.x = testX.x;
             }
-
-        SetShaderValue(shader, resLoc, &res, SHADER_UNIFORM_VEC2);
-        SetShaderValue(shader, timeLoc, &t, SHADER_UNIFORM_FLOAT);
+            
+            Vector2 testZ = (Vector2){pXZ.x, pXZ.y + step.y};
+            if (!CollidesAny(testZ, PLAYER_RADIUS, walls, wallCount)) {
+                pXZ.y = testZ.y;
+            }
+            
+            playerPos.x = pXZ.x;
+            playerPos.z = pXZ.y;
 
             onGround = (playerPos.y <= 0.0001f);
             
