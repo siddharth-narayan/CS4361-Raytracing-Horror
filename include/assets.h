@@ -10,6 +10,14 @@ typedef struct {
     Texture2D floorTexture;
     Texture2D ceilingTexture;
     Music horrorMusic;
+    Music gameMusic;
+    Sound jumpScareSound;
+    Sound footstepSound;
+    Sound batteryPickupSound;
+    Sound bulletSound;
+    Sound victorySound;
+    Sound reloadSound;
+    Sound flashlightSound;
     bool loaded;
 } GameAssets;
 
@@ -41,6 +49,14 @@ typedef struct {
     float emitAccumulator;
 } ParticleSystem;
 
+// Battery pickup structure
+typedef struct {
+    Vector3 position;      // World position
+    bool collected;        // Whether this battery has been collected
+    float bobTime;         // Time accumulator for bobbing animation
+    float rotation;        // Rotation angle for visual effect
+} BatteryPickup;
+
 // Function declarations
 GameAssets* Assets_Load(void);
 void Assets_Unload(GameAssets* assets);
@@ -61,4 +77,9 @@ void ParticleSystem_Render(const ParticleSystem* ps);
 
 // Lighting functions
 void Lighting_UpdateTorchLights(const Torch* torches, int count, float time);
+
+// Battery pickup functions
+int Batteries_Generate(const Maze* maze, BatteryPickup** outBatteries, int maxBatteries);
+void Batteries_Update(BatteryPickup* batteries, int count, float dt);
+void Batteries_Render(const BatteryPickup* batteries, int count, float globalTime);
 
