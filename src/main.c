@@ -852,7 +852,10 @@ static void InitGame(Maze** maze, WallRect** walls, int* wallCount, Vector3* pla
             scaryChars[i].health = SCARY_CHAR_HEALTH;
             scaryChars[i].maxHealth = SCARY_CHAR_MAX_HEALTH;
             scaryChars[i].isDead = false;
+            
             scaryChars[i].model = LoadModel("assets/Enemy.obj");
+            // Texture2D texture = LoadTexture("assets/scary.png");
+            // scaryChars[i].model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = texture;
         }
     }
     
@@ -1983,9 +1986,28 @@ int main(void) {
 
                 };
 
-                DrawModel(scaryChars->model, scaryChars->position, .5, scaryColor);
-                printf("abcd\n");
-                DrawCube(charRenderPos, scaryChars[i].radius * 2.0f, scaryChars[i].height, scaryChars[i].radius * 2.0f, scaryColor);
+                Vector3 modelPos = (Vector3){
+                    charRenderPos.x,
+                    charRenderPos.y - 0.5f,
+                    charRenderPos.z
+                }; 
+
+
+                Vector3 dir = {
+                    modelPos.x - playerPos.x,
+                    modelPos.y - playerPos.y,
+                    modelPos.z - playerPos.z
+                };
+
+                float yaw = atan2f(dir.x, dir.z) * (180.0f / PI);
+
+                Vector3 rotationAxis = { 0.0f, 1.0f, 0.0f };
+                Vector3 scale = { .2f, .2f, .2f };
+
+                DrawModelEx(scaryChars[i].model, modelPos, rotationAxis, yaw, scale, WHITE);
+
+                //    DrawModel(scaryChars[i].model, modelPos, .2, WHITE);
+                // DrawCube(charRenderPos, scaryChars[i].radius * 2.0f, scaryChars[i].height, scaryChars[i].radius * 2.0f, scaryColor);
                 
                 // add a subtle dark glow around it (pulsing for horror)
                 float pulse = 0.8f + 0.2f * sinf(globalTime * 2.0f + i);
