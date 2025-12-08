@@ -53,6 +53,7 @@ typedef enum {
 // Scary character structure
 typedef struct {
     Vector3 position;
+    Model model;
     float speed;
     float radius;
     float height;
@@ -851,6 +852,7 @@ static void InitGame(Maze** maze, WallRect** walls, int* wallCount, Vector3* pla
             scaryChars[i].health = SCARY_CHAR_HEALTH;
             scaryChars[i].maxHealth = SCARY_CHAR_MAX_HEALTH;
             scaryChars[i].isDead = false;
+            scaryChars[i].model = LoadModel("assets/Enemy.obj");
         }
     }
     
@@ -1538,6 +1540,7 @@ int main(void) {
                 playerVelY = 0.0f;
                 if (IsKeyPressed(KEY_SPACE)) {
                     playerVelY = JUMP_SPEED;
+                    playerPos.y +=
                     onGround = false;
                 }
             } else {
@@ -1977,7 +1980,11 @@ int main(void) {
                     0, 
                     (unsigned char)((i * 3) * baseDarkness), 
                     255
+
                 };
+
+                DrawModel(scaryChars->model, scaryChars->position, .5, scaryColor);
+                printf("abcd\n");
                 DrawCube(charRenderPos, scaryChars[i].radius * 2.0f, scaryChars[i].height, scaryChars[i].radius * 2.0f, scaryColor);
                 
                 // add a subtle dark glow around it (pulsing for horror)
